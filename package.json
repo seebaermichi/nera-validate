@@ -1,0 +1,57 @@
+{
+    "name": "@nera-static/validate",
+    "version": "1.0.0",
+    "description": "Validate a Nera site the way the build sees it — layouts and includes resolve (theme-aware), YAML parses, required frontmatter present — with structured results shared by the CLI and the Nera Pro platform",
+    "type": "module",
+    "main": "./index.js",
+    "exports": {
+        ".": "./index.js"
+    },
+    "bin": {
+        "nera-validate": "./bin/nera-validate.js"
+    },
+    "files": [
+        "index.js",
+        "src",
+        "bin"
+    ],
+    "scripts": {
+        "lint": "eslint .",
+        "lint:fix": "eslint . --fix",
+        "test": "vitest",
+        "prepare": "husky"
+    },
+    "keywords": [
+        "nera",
+        "static-site-generator",
+        "validation",
+        "lint",
+        "pug",
+        "yaml"
+    ],
+    "author": "Michael Becker",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/seebaermichi/nera-validate.git"
+    },
+    "bugs": {
+        "url": "https://github.com/seebaermichi/nera-validate/issues"
+    },
+    "homepage": "https://github.com/seebaermichi/nera-validate#readme",
+    "engines": {
+        "node": ">=20.0.0"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "dependencies": {
+        "@nera-static/core": "^4.9.0",
+        "yaml": "^2.4.1"
+    },
+    "devDependencies": {
+        "eslint": "^9.17.0",
+        "husky": "^9.1.7",
+        "vitest": "^3.2.4"
+    }
+}
