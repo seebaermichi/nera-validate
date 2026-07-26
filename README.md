@@ -3,6 +3,8 @@
 Validate a [Nera](https://github.com/seebaermichi/nera) site **the way the build
 sees it** — before you publish, and before Nera silently drops a page.
 
+📖 **Documentation:** [nera.js.org](https://nera.js.org)
+
 Nera fails quietly by design: a page missing `layout` is skipped with no message,
 an unresolved `include` surfaces late, malformed YAML is easy to miss. This
 package surfaces those up front, and it resolves layouts and includes through the
