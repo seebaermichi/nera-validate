@@ -51,6 +51,18 @@ on what "valid" means.
 | `layout-missing` | warning | a page has no `layout` — the build would skip it |
 | `layout-unresolved` | error | the `layout` does not resolve in the view/theme chain |
 | `include-unresolved` | error | an `include`/`extends` in the pug graph does not resolve |
+| `theme-shadowed` | warning | a `nera new` starter template hides the configured theme's file of the same name |
+
+**`theme-shadowed`.** A site's own views win over its theme's, file by file —
+that is how you override one theme template. But `nera new` scaffolds
+`theme/views/layouts/layout.pug` and `theme/views/pages/default.pug`, the same
+names a theme uses, so after installing a theme those starter files keep
+hiding it and the build looks unthemed. The check fires only for files that
+still carry the `//- nera:scaffold-default` line `nera new` writes into them;
+any other same-named file is a deliberate override and is left alone. Delete
+the starter file to use the theme's, or remove the marker line to keep it.
+Sites scaffolded before `@nera-static/nera` 1.1.0 have no marker and are not
+checked.
 
 ## Requirements
 

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-08
+
+### Added
+
+-   `theme-shadowed` warning: a `nera new` starter template (marked with
+    `//- nera:scaffold-default`) that hides the configured theme's file of the
+    same name. Site views win over theme views file by file, so after
+    installing a theme the starter layout kept the site looking unthemed with
+    no hint why. Deliberate overrides — any same-named file without the marker
+    — stay silent. `SCAFFOLD_MARKER` is exported.
+
 ## [1.0.0] - 2026-07-24
 
 Initial release — Slice 3 of the core consolidation (`ROADMAP-core.md`) and the

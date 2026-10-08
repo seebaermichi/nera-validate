@@ -14,8 +14,9 @@ const rel = (cwd, abs) => path.relative(cwd, abs).split(path.sep).join('/')
 export const hasErrors = (results) =>
     results.some((r) => r.severity === 'error')
 
-// Recursively collect `.md` page files under a directory (absolute paths).
-function walkPages(dir) {
+// Recursively collect files with the given extension under a directory
+// (absolute paths). A missing directory yields an empty list.
+function walkFiles(dir, ext) {
     const out = []
     let entries
     try {
@@ -25,10 +26,45 @@ function walkPages(dir) {
     }
     for (const entry of entries) {
         const full = path.join(dir, entry.name)
-        if (entry.isDirectory()) out.push(...walkPages(full))
-        else if (entry.name.endsWith('.md')) out.push(full)
+        if (entry.isDirectory()) out.push(...walkFiles(full, ext))
+        else if (entry.name.endsWith(ext)) out.push(full)
     }
     return out
+}
+
+// The marker `nera new` puts on the first line of its starter templates
+// (`layouts/layout.pug`, `pages/default.pug`). It lets the validator tell an
+// untouched starter file apart from a deliberate child-theme override.
+export const SCAFFOLD_MARKER = 'nera:scaffold-default'
+
+// Site views win over theme views, file by file — that is the child-theme
+// contract. So a `nera new` starter file left in place hides the theme's file
+// of the same name, and the theme looks as if it does nothing. Flag only files
+// that still carry the scaffold marker: any other same-named file is a
+// deliberate override and must stay silent.
+function collectShadowFindings(model, cwd, findings) {
+    if (!model.theme) return
+    const siteViews = model.roots[0]
+    for (const abs of walkFiles(siteViews, '.pug')) {
+        const relPath = path.relative(siteViews, abs)
+        if (!fssync.existsSync(path.join(model.theme.viewsRoot, relPath))) {
+            continue
+        }
+        const lines = fssync.readFileSync(abs, 'utf-8').split('\n')
+        const markerIndex = lines.findIndex((l) => l.includes(SCAFFOLD_MARKER))
+        if (markerIndex === -1) continue
+        const name = relPath.split(path.sep).join('/')
+        findings.push({
+            file: rel(cwd, abs),
+            line: markerIndex + 1,
+            severity: 'warning',
+            rule: 'theme-shadowed',
+            message:
+                `the \`nera new\` starter file hides the theme's own ${name} — ` +
+                'delete it to use the theme\'s, or remove the ' +
+                `\`${SCAFFOLD_MARKER}\` line to keep it on purpose`,
+        })
+    }
 }
 
 // Resolve a page's `layout` to an existing pug file through the layered chain,
@@ -55,6 +91,8 @@ function resolveLayout(layout, roots) {
  *     silently skip the page)
  *   - the layout resolves through the theme-aware view chain (layout-unresolved)
  *   - every include/extends in the reachable pug graph resolves (include-unresolved)
+ *   - no `nera new` starter template hides a theme file of the same name
+ *     (theme-shadowed — a warning: the build uses the starter, not the theme)
  *
  * @returns {Array<{file:string, line:number|null, severity:'error'|'warning',
  *                  rule:string, message:string}>}
@@ -86,10 +124,12 @@ export function validateSite({ cwd = process.cwd() } = {}) {
         })
     }
 
+    collectShadowFindings(model, cwd, findings)
+
     const pagesDir = path.resolve(cwd, model.folders.pages)
     const visitedPug = new Set()
 
-    for (const abs of walkPages(pagesDir)) {
+    for (const abs of walkFiles(pagesDir, '.md')) {
         const raw = fssync.readFileSync(abs, 'utf-8')
         const fm = extractFrontmatter(raw)
 

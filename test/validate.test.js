@@ -166,4 +166,78 @@ describe('validateSite', () => {
         const results = validateSite({ cwd })
         expect(results.filter((r) => r.severity === 'error')).toEqual([])
     })
+
+    describe('theme-shadowed', () => {
+        // A site using a local theme that ships its own layout and page
+        // template, alongside the site's own copies of both.
+        async function buildThemedSite(siteLayout) {
+            await buildValidSite()
+            await fs.writeFile(
+                path.join(cwd, 'config', 'app.yaml'),
+                'name: Test\ntheme: ./my-theme\n'
+            )
+            const themeViews = path.join(cwd, 'my-theme', 'views')
+            await fs.mkdir(path.join(themeViews, 'layouts'), { recursive: true })
+            await fs.mkdir(path.join(themeViews, 'pages'), { recursive: true })
+            await fs.writeFile(
+                path.join(themeViews, 'layouts', 'layout.pug'),
+                'html\n  body\n    header Theme\n    block content\n'
+            )
+            await fs.writeFile(
+                path.join(themeViews, 'pages', 'default.pug'),
+                'extends ../layouts/layout\n\nblock content\n  main !{ content }\n'
+            )
+            await fs.writeFile(
+                path.join(cwd, 'theme', 'views', 'layouts', 'layout.pug'),
+                siteLayout
+            )
+        }
+
+        it('warns when a nera new starter file hides a theme file', async () => {
+            await buildThemedSite(
+                '//- nera:scaffold-default\nhtml\n  body\n    block content\n'
+            )
+            const results = validateSite({ cwd })
+
+            const finding = results.find((r) => r.rule === 'theme-shadowed')
+            expect(finding).toEqual(
+                expect.objectContaining({
+                    file: 'theme/views/layouts/layout.pug',
+                    line: 1,
+                    severity: 'warning',
+                })
+            )
+            expect(finding.message).toContain('layouts/layout.pug')
+            // Only the marked file is reported, and a warning keeps it valid.
+            expect(
+                results.filter((r) => r.rule === 'theme-shadowed')
+            ).toHaveLength(1)
+            expect(hasErrors(results)).toBe(false)
+        })
+
+        it('stays silent for a deliberate override without the marker', async () => {
+            await buildThemedSite('html\n  body\n    block content\n')
+            const results = validateSite({ cwd })
+            expect(results.find((r) => r.rule === 'theme-shadowed')).toBeUndefined()
+        })
+
+        it('stays silent when no theme is configured', async () => {
+            await buildValidSite()
+            await fs.writeFile(
+                path.join(cwd, 'theme', 'views', 'layouts', 'layout.pug'),
+                '//- nera:scaffold-default\nhtml\n  body\n    block content\n'
+            )
+            expect(validateSite({ cwd })).toEqual([])
+        })
+
+        it('stays silent for a starter file the theme does not ship', async () => {
+            await buildThemedSite('html\n  body\n    block content\n')
+            await fs.writeFile(
+                path.join(cwd, 'theme', 'views', 'pages', 'extra.pug'),
+                '//- nera:scaffold-default\np extra\n'
+            )
+            const results = validateSite({ cwd })
+            expect(results.find((r) => r.rule === 'theme-shadowed')).toBeUndefined()
+        })
+    })
 })
