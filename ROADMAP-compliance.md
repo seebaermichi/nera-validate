@@ -1,6 +1,7 @@
 # ROADMAP — output checks: accessibility, privacy and legal hints
 
-> **Status: spec, decisions settled 2026-10-09. No code yet.**
+> **Status: spec, decisions settled 2026-10-09. Slice 1 (infrastructure +
+> `a11y-html-lang`) implemented 2026-10-09, unreleased; slices 2–5 open.**
 >
 > This document is the single source of truth for teaching `@nera-static/validate`
 > to check the **built HTML** of a Nera site for accessibility (WCAG / BITV /
@@ -212,6 +213,14 @@ run is not proof of compliance.
    `off`, `validate_ignore`), and one rule end to end (`a11y-html-lang`), with
    temp-dir tests in the style of `test/validate.test.js` (write HTML into
    `public/`, assert findings).
+   **Done 2026-10-09** (`src/output.js`, `src/output-rules.js`,
+   `test/output.test.js`). Choices made on the way: htmlparser2 is pinned to
+   **^10** (11+ requires Node ≥ 20.19, which would raise the floor); a collapsed
+   finding keeps the first file as `file`/`line`, appends "(on N pages, e.g. …)"
+   to the message and lists every occurrence under `files`; repeats within one
+   file are not collapsed; an unknown level in `config/validate.yaml` is a
+   `config-invalid` warning and the default is kept; rule ids the release does
+   not know are ignored silently (forward compatibility).
 2. **Accessibility rules.** The `a11y-*` table.
 3. **Privacy and legal rules.** The `privacy-*` and `legal-*` tables.
 4. **CLI and docs.** `nera check` and `nera build --check` in `nera-cli`,

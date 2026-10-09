@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+-   `validateOutput({ cwd, dir = 'public' })` — a second pass over the **built**
+    HTML (slice 1 of `ROADMAP-compliance.md`). Throws a "run `nera build` first"
+    error when the folder is missing or holds no HTML. Results share
+    `validateSite`'s shape plus `source` (the page behind an output file); an
+    identical finding on two or more files is collapsed into one, with every
+    occurrence under `files`. `validateSite` is unchanged.
+-   `config/validate.yaml`: `rules: { <id>: error|warning|off }` sets a rule's
+    level; frontmatter `validate_ignore: [<id>, …]` silences rules per page.
+    An unknown level is reported as `config-invalid`.
+-   First output rule, `a11y-html-lang` (warning): `<html>` without a non-empty
+    `lang` (WCAG 3.1.1).
+-   Dependencies `htmlparser2` ^10.1.0 and `domutils` ^3.2.2 — the last majors
+    that keep the Node >= 20 floor (11+ require >= 20.19).
+
 ## [1.1.0] - 2026-10-08
 
 ### Added

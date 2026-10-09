@@ -5,32 +5,16 @@ import { resolveSiteModel, resolveEntry } from '@nera-static/core'
 import { extractFrontmatter, frontmatterKeyLine } from './src/frontmatter.js'
 import { collectIncludeFindings } from './src/pug-refs.js'
 import { formatResults } from './src/format.js'
+import { walkFiles } from './src/walk.js'
+import { validateOutput } from './src/output.js'
 
-export { formatResults }
+export { formatResults, validateOutput }
 
 const rel = (cwd, abs) => path.relative(cwd, abs).split(path.sep).join('/')
 
 // Any finding of severity 'error' makes the site invalid (a warning does not).
 export const hasErrors = (results) =>
     results.some((r) => r.severity === 'error')
-
-// Recursively collect files with the given extension under a directory
-// (absolute paths). A missing directory yields an empty list.
-function walkFiles(dir, ext) {
-    const out = []
-    let entries
-    try {
-        entries = fssync.readdirSync(dir, { withFileTypes: true })
-    } catch {
-        return out
-    }
-    for (const entry of entries) {
-        const full = path.join(dir, entry.name)
-        if (entry.isDirectory()) out.push(...walkFiles(full, ext))
-        else if (entry.name.endsWith(ext)) out.push(full)
-    }
-    return out
-}
 
 // The marker `nera new` puts on the first line of its starter templates
 // (`layouts/layout.pug`, `pages/default.pug`). It lets the validator tell an
