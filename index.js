@@ -7,6 +7,7 @@ import { collectIncludeFindings } from './src/pug-refs.js'
 import { formatResults, formatOutputResults, OUTPUT_NOTE } from './src/format.js'
 import { walkFiles } from './src/walk.js'
 import { validateOutput } from './src/output.js'
+import { readValidateYaml, readIgnore, isIgnored } from './src/config.js'
 
 export { formatResults, formatOutputResults, OUTPUT_NOTE, validateOutput }
 
@@ -77,6 +78,10 @@ function resolveLayout(layout, roots) {
  *   - every include/extends in the reachable pug graph resolves (include-unresolved)
  *   - no `nera new` starter template hides a theme file of the same name
  *     (theme-shadowed — a warning: the build uses the starter, not the theme)
+ *
+ * `ignore: { <rule-id>: [path, …] }` in config/validate.yaml silences a rule
+ * on the listed files and folders — e.g. `layout-missing` on content fragments
+ * another page includes, or on drafts.
  *
  * @returns {Array<{file:string, line:number|null, severity:'error'|'warning',
  *                  rule:string, message:string}>}
@@ -163,5 +168,13 @@ export function validateSite({ cwd = process.cwd() } = {}) {
         collectIncludeFindings(entry, model.roots, cwd, visitedPug, findings)
     }
 
-    return findings
+    const configFindings = []
+    const { config, file } = readValidateYaml(
+        cwd, model.folders.config, configFindings
+    )
+    const ignore = readIgnore(config, file, configFindings)
+    return [
+        ...configFindings,
+        ...findings.filter((f) => !isIgnored(f, ignore)),
+    ]
 }

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-10-09
+
+### Added
+
+-   `ignore: { <rule-id>: [path, …] }` in `config/validate.yaml` silences a
+    rule on the listed files and folders, in `validateSite` and
+    `validateOutput` alike. Paths are relative to the site root, a folder
+    covers everything below it, and `*` stands for one folder name
+    (`pages/*/references`). Made for `layout-missing` on content fragments and
+    drafts, which have no `layout` on purpose. Unusable values are reported as
+    `config-invalid` and ignored.
+
+### Changed
+
+-   `validateSite` now reads `config/validate.yaml` (for `ignore`), so a file
+    that does not parse is a `yaml-parse` error in `nera validate` too, not
+    only in `nera check`. Without the file, results are unchanged.
+
 ## [1.2.0] - 2026-10-09
 
 ### Added

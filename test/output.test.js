@@ -1010,6 +1010,34 @@ describe('validateOutput', () => {
         })
     })
 
+    describe('ignore', () => {
+        it('drops findings on listed paths before collapsing', async () => {
+            await buildSite()
+            await write('public/index.html', page(''))
+            await write('public/tags/a.html', page(''))
+            await write('public/tags/b.html', page(''))
+            await write(
+                'config/validate.yaml',
+                'ignore:\n  a11y-html-lang: [public/tags]\n'
+            )
+            const results = validateOutput({ cwd })
+            expect(results).toHaveLength(1)
+            expect(results[0].file).toBe('public/index.html')
+            expect(results[0].message).not.toContain('on ')
+        })
+
+        it('leaves other rules on the same path alone', async () => {
+            await buildSite()
+            await write('public/tags/a.html', page(''))
+            await write(
+                'config/validate.yaml',
+                'ignore:\n  a11y-title: [public/tags]\n'
+            )
+            const results = validateOutput({ cwd })
+            expect(results.map((r) => r.rule)).toEqual(['a11y-html-lang'])
+        })
+    })
+
     it('formats through the shared formatter', async () => {
         await buildSite()
         await write('public/index.html', page(''))

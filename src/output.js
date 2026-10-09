@@ -6,6 +6,13 @@ import { extractFrontmatter } from './frontmatter.js'
 import { parseHtml } from './html.js'
 import { OUTPUT_RULES, findLegalPages } from './output-rules.js'
 import { walkFiles } from './walk.js'
+import {
+    invalid,
+    isMapping,
+    readValidateYaml,
+    readIgnore,
+    isIgnored,
+} from './config.js'
 
 const rel = (cwd, abs) => path.relative(cwd, abs).split(path.sep).join('/')
 
@@ -13,18 +20,6 @@ const LEVELS = ['error', 'warning', 'off']
 
 // How many example files a collapsed finding names in its message.
 const COLLAPSE_EXAMPLES = 3
-
-// Report a value in config/validate.yaml that cannot be used. It is ignored and
-// the run goes on, so a typo never hides the rest of the report.
-const invalid = (file, message) => ({
-    file,
-    line: null,
-    severity: 'warning',
-    rule: 'config-invalid',
-    message,
-})
-
-const isMapping = (v) => v != null && typeof v === 'object' && !Array.isArray(v)
 
 // `legal.imprint` / `legal.privacy`: per language, the site path every page of
 // that language must link to. Keys are lower-cased to match `<html lang>`.
@@ -71,30 +66,13 @@ function readAllowedHosts(config, file, findings) {
     }).map((host) => host.toLowerCase())
 }
 
-// Read config/validate.yaml: rule levels over the rule defaults, the legal pages
-// and the allowed third-party hosts. A missing file means the defaults. A
-// broken file or an unusable value is reported as a finding and otherwise
-// ignored.
+// Read config/validate.yaml: rule levels over the rule defaults, the legal pages,
+// the allowed third-party hosts and the per-rule ignored paths. A missing file
+// means the defaults. A broken file or an unusable value is reported as a
+// finding and otherwise ignored.
 function loadConfig(cwd, configFolder, findings) {
     const levels = Object.fromEntries(OUTPUT_RULES.map((r) => [r.id, r.level]))
-    const defaults = { levels, legal: { imprint: {}, privacy: {} }, allowedHosts: [] }
-    const abs = path.resolve(cwd, configFolder, 'validate.yaml')
-    if (!fssync.existsSync(abs)) return defaults
-    const file = rel(cwd, abs)
-
-    let config
-    try {
-        config = YAML.parse(fssync.readFileSync(abs, 'utf-8')) || {}
-    } catch (err) {
-        findings.push({
-            file,
-            line: err.linePos?.[0]?.line ?? null,
-            severity: 'error',
-            rule: 'yaml-parse',
-            message: `config could not be parsed: ${err.message.split('\n')[0]}`,
-        })
-        return defaults
-    }
+    const { config, file } = readValidateYaml(cwd, configFolder, findings)
 
     for (const [id, level] of Object.entries(config.rules || {})) {
         if (!(id in levels)) continue // a rule from a later release, or a typo
@@ -125,6 +103,7 @@ function loadConfig(cwd, configFolder, findings) {
             privacy: readLegalPaths(config, 'privacy', file, findings),
         },
         allowedHosts: readAllowedHosts(config, file, findings),
+        ignore: readIgnore(config, file, findings),
     }
 }
 
@@ -307,5 +286,8 @@ export function validateOutput({ cwd = process.cwd(), dir = 'public' } = {}) {
         }
     }
 
-    return [...configFindings, ...collapse(findings)]
+    // `ignore` in config/validate.yaml: drop findings on the listed paths
+    // before collapsing, so the "on N pages" count matches what is reported.
+    const kept = findings.filter((f) => !isIgnored(f, config.ignore))
+    return [...configFindings, ...collapse(kept)]
 }

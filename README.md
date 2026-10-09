@@ -73,6 +73,28 @@ the starter file to use the theme's, or remove the marker line to keep it.
 Sites scaffolded before `@nera-static/nera` 1.1.0 have no marker and are not
 checked.
 
+### Ignoring paths
+
+Some Markdown files have no `layout` on purpose — content fragments another
+page pulls in, drafts — and `layout-missing` would warn about each of them on
+every run. List them under `ignore` in `config/validate.yaml`:
+
+```yaml
+ignore:
+  layout-missing:
+    - pages/*/references        # a folder: everything below it
+    - pages/de/blog/drafts
+    - pages/en/notes.md         # a single file
+```
+
+Paths are relative to the site root; `*` stands for one whole folder name
+(`pages/*/references` covers every language), and a folder covers everything
+below it. `ignore` works for any rule id, in this pass and in
+`validateOutput` (paths under `public/` there). A path starting with `/` or
+containing `..`, or a value that is not a list, is reported as
+`config-invalid` and ignored; a `validate.yaml` that does not parse is a
+`yaml-parse` error.
+
 ## Checking the built output
 
 ```js
@@ -172,7 +194,11 @@ legal:
 privacy:
   allowed_hosts:             # third-party hosts you have accounted for
     - cdn.example.org
+ignore:                      # rule id → paths it stays silent on
+  a11y-h1: [public/tags]
 ```
+
+`ignore` is described under [Ignoring paths](#ignoring-paths).
 
 A level other than `error`, `warning` or `off`, a legal path not starting with
 `/`, or a URL instead of a host name is reported as `config-invalid` and

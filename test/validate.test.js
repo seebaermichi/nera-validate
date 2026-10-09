@@ -240,4 +240,96 @@ describe('validateSite', () => {
             expect(results.find((r) => r.rule === 'theme-shadowed')).toBeUndefined()
         })
     })
+
+    describe('ignore in config/validate.yaml', () => {
+        // Pages without a layout in several folders, the way a site keeps
+        // content fragments (included elsewhere) and drafts.
+        async function buildSiteWithFragments(validateYaml) {
+            await buildValidSite()
+            const pages = {
+                'pages/de/references/a.md': '---\ntitle: A\n---\n',
+                'pages/en/references/a.md': '---\ntitle: A\n---\n',
+                'pages/de/blog/drafts/x.md': '---\ntitle: X\n---\n',
+                'pages/de/blog/forgotten.md': '---\ntitle: F\n---\n',
+            }
+            for (const [rel, body] of Object.entries(pages)) {
+                await fs.mkdir(path.join(cwd, path.dirname(rel)), { recursive: true })
+                await fs.writeFile(path.join(cwd, rel), body)
+            }
+            if (validateYaml != null) {
+                await fs.writeFile(
+                    path.join(cwd, 'config', 'validate.yaml'),
+                    validateYaml
+                )
+            }
+        }
+
+        const files = (results, rule) =>
+            results.filter((r) => r.rule === rule).map((r) => r.file).sort()
+
+        it('reports every page without a layout when nothing is ignored', async () => {
+            await buildSiteWithFragments()
+            expect(files(validateSite({ cwd }), 'layout-missing')).toHaveLength(4)
+        })
+
+        it('silences a rule on listed folders, with * for one segment', async () => {
+            await buildSiteWithFragments(
+                'ignore:\n  layout-missing:\n' +
+                '    - pages/*/references\n    - ./pages/de/blog/drafts/\n'
+            )
+            const results = validateSite({ cwd })
+            expect(files(results, 'layout-missing'))
+                .toEqual(['pages/de/blog/forgotten.md'])
+            expect(results.find((r) => r.rule === 'config-invalid')).toBeUndefined()
+        })
+
+        it('matches a single file, and only for the named rule', async () => {
+            await buildSiteWithFragments(
+                'ignore:\n  layout-missing: [pages/de/blog/forgotten.md]\n' +
+                '  layout-unresolved: [pages]\n'
+            )
+            expect(files(validateSite({ cwd }), 'layout-missing')).toEqual([
+                'pages/de/blog/drafts/x.md',
+                'pages/de/references/a.md',
+                'pages/en/references/a.md',
+            ])
+        })
+
+        it('does not match a folder by a name prefix', async () => {
+            await buildSiteWithFragments(
+                'ignore:\n  layout-missing: [pages/de/ref]\n'
+            )
+            expect(files(validateSite({ cwd }), 'layout-missing')).toHaveLength(4)
+        })
+
+        it('reports unusable values as config-invalid and ignores them', async () => {
+            await buildSiteWithFragments(
+                'ignore:\n  layout-missing: [/pages/de/references, ../x, pages/en/references]\n' +
+                '  layout-unresolved: pages\n'
+            )
+            const results = validateSite({ cwd })
+            const invalid = results.filter((r) => r.rule === 'config-invalid')
+            expect(invalid).toHaveLength(3)
+            expect(invalid[0].file).toBe('config/validate.yaml')
+            expect(invalid.map((r) => r.message).join('\n'))
+                .toContain('use a path relative to the site root')
+            expect(files(results, 'layout-missing')).toHaveLength(3)
+            expect(hasErrors(results)).toBe(false)
+        })
+
+        it('reports ignore that is not a mapping', async () => {
+            await buildSiteWithFragments('ignore: [pages]\n')
+            const results = validateSite({ cwd })
+            expect(results.filter((r) => r.rule === 'config-invalid')).toHaveLength(1)
+            expect(files(results, 'layout-missing')).toHaveLength(4)
+        })
+
+        it('errors on a validate.yaml that does not parse', async () => {
+            await buildSiteWithFragments('ignore: [unclosed\n')
+            const results = validateSite({ cwd })
+            const parse = results.find((r) => r.rule === 'yaml-parse')
+            expect(parse.file).toBe('config/validate.yaml')
+            expect(hasErrors(results)).toBe(true)
+        })
+    })
 })

@@ -128,6 +128,15 @@ privacy:
 Per page, frontmatter `validate_ignore: [rule-id, …]` silences rules for that
 page's output file (it is mapped back through `source`).
 
+Per path, `ignore: { <rule-id>: [path, …] }` silences a rule on files and
+folders (relative to the site root, `*` for one folder name). Added after the
+1.2.0 release, for both passes: `validateSite` reads `config/validate.yaml`
+for it too. The case was `michael-becker-berlin.de`, whose 80 content
+fragments and drafts have no `layout` on purpose and filled every
+`nera validate` run with `layout-missing` warnings. Rejected: honouring
+frontmatter `validate_ignore` in `validateSite` — one config entry per folder
+beats a line in each of 80 files, and every new fragment would need it.
+
 ### Parser
 
 Use **htmlparser2** (with `domutils`/`css-select`) directly, not cheerio. Cheerio

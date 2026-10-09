@@ -1,6 +1,6 @@
 {
     "name": "@nera-static/validate",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "description": "Validate a Nera site the way the build sees it — layouts and includes resolve (theme-aware), YAML parses, required frontmatter present — with structured results shared by the CLI and the Nera Pro platform",
     "type": "module",
     "main": "./index.js",
