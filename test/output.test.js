@@ -7,8 +7,27 @@ import { validateOutput, hasErrors, formatResults } from '../index.js'
 let cwd
 
 // A page the way core writes it (run through `pretty`), with or without `lang`.
+// Clean for every default rule: a title, one `<main>` with one `<h1>`, and
+// nothing focusable that would need a skip link.
 const page = (htmlAttrs = ' lang="en"') =>
-    `<!DOCTYPE html>\n<html${htmlAttrs}>\n  <head>\n    <title>T</title>\n  </head>\n  <body>\n    <main>Hi</main>\n  </body>\n</html>\n`
+    `<!DOCTYPE html>\n<html${htmlAttrs}>\n  <head>\n    <title>T</title>\n  </head>\n  <body>\n    <main><h1>Hi</h1></main>\n  </body>\n</html>\n`
+
+// A full page around the given head and body markup, one element per line from
+// line 1, so a finding's line is easy to predict: the head starts at line 4,
+// the body's first child sits at line 6 + the number of head lines.
+const doc = ({ head = ['<title>T</title>'], body = ['<main><h1>Hi</h1></main>'] } = {}) =>
+    [
+        '<!DOCTYPE html>',
+        '<html lang="en">',
+        '<head>',
+        ...head,
+        '</head>',
+        '<body>',
+        ...body,
+        '</body>',
+        '</html>',
+        '',
+    ].join('\n')
 
 async function write(relPath, content) {
     const abs = path.join(cwd, relPath)
@@ -99,6 +118,364 @@ describe('validateOutput', () => {
             await buildSite()
             await write('public/de/index.html', page(' lang="de"'))
             expect(validateOutput({ cwd })).toEqual([])
+        })
+    })
+
+    describe('accessibility rules', () => {
+        // Build a site whose index page is `html`, enable the rule when it is
+        // opt-in, and return that rule's findings only.
+        async function check(rule, html, { enable = false } = {}) {
+            await buildSite()
+            await write('public/index.html', html)
+            if (enable) await write('config/validate.yaml', `rules:\n  ${rule}: warning\n`)
+            return validateOutput({ cwd }).filter((r) => r.rule === rule)
+        }
+
+        it('keeps opt-in rules off until enabled', async () => {
+            await buildSite()
+            await write('public/index.html', doc({
+                body: [
+                    '<a href="#main">Skip</a>',
+                    '<main id="main"><h1>Hi</h1>',
+                    '<a href="/de/" hreflang="de" target="_blank">Deutsch</a></main>',
+                ],
+            }))
+            await write('public/site.css', 'html { scroll-behavior: smooth; }\n')
+            expect(validateOutput({ cwd })).toEqual([])
+        })
+
+        describe('a11y-title', () => {
+            it('warns on a missing <title>', async () => {
+                const [hit, ...rest] = await check('a11y-title', doc({ head: ['<meta charset="utf-8">'] }))
+                expect(rest).toEqual([])
+                expect(hit).toEqual(expect.objectContaining({ line: 3, severity: 'warning' }))
+                expect(hit.message).toContain('no `<title>`')
+                expect(hit.message).toContain('WCAG 2.4.2')
+            })
+
+            it('warns on an empty <title>', async () => {
+                const [hit] = await check('a11y-title', doc({ head: ['<title>  </title>'] }))
+                expect(hit.line).toBe(4)
+                expect(hit.message).toContain('an empty `<title>`')
+            })
+
+            it('stays silent with a title', async () => {
+                expect(await check('a11y-title', doc())).toEqual([])
+            })
+        })
+
+        describe('a11y-h1', () => {
+            it('warns on no <h1>', async () => {
+                const [hit] = await check('a11y-h1', doc({ body: ['<main><h2>Hi</h2></main>'] }))
+                expect(hit.line).toBe(6)
+                expect(hit.message).toContain('no `<h1>`')
+            })
+
+            it('warns once on several <h1>, at the second', async () => {
+                const hits = await check('a11y-h1', doc({
+                    body: ['<main>', '<h1>A</h1>', '<h1>B</h1>', '<h1>C</h1>', '</main>'],
+                }))
+                expect(hits).toHaveLength(1)
+                expect(hits[0].line).toBe(9)
+                expect(hits[0].message).toContain('more than one `<h1>`')
+            })
+
+            it('stays silent with exactly one', async () => {
+                expect(await check('a11y-h1', doc())).toEqual([])
+            })
+        })
+
+        describe('a11y-heading-skip', () => {
+            it('warns on each jump down, at the heading that skips', async () => {
+                const hits = await check('a11y-heading-skip', doc({
+                    body: ['<main>', '<h1>A</h1>', '<h3>B</h3>', '<h4>C</h4>', '<h6>D</h6>', '</main>'],
+                }))
+                expect(hits.map((h) => h.line)).toEqual([9, 11])
+                expect(hits[0].message).toContain('from `<h1>` to `<h3>`')
+                expect(hits[1].message).toContain('from `<h4>` to `<h6>`')
+            })
+
+            it('stays silent on steps of one and on any step back up', async () => {
+                expect(await check('a11y-heading-skip', doc({
+                    body: ['<main>', '<h1>A</h1>', '<h2>B</h2>', '<h3>C</h3>', '<h2>D</h2>', '</main>'],
+                }))).toEqual([])
+            })
+        })
+
+        describe('a11y-img-alt', () => {
+            it('warns on <img> without alt', async () => {
+                const [hit] = await check('a11y-img-alt', doc({
+                    body: ['<main><h1>Hi</h1>', '<img src="/logo.png">', '</main>'],
+                }))
+                expect(hit.line).toBe(8)
+                expect(hit.message).toContain('`<img src="/logo.png">` has no `alt`')
+            })
+
+            it('accepts alt="" (decorative) and real alt text', async () => {
+                expect(await check('a11y-img-alt', doc({
+                    body: ['<main><h1>Hi</h1>', '<img src="a.png" alt="">', '<img src="b.png" alt="B"></main>'],
+                }))).toEqual([])
+            })
+        })
+
+        describe('a11y-form-label', () => {
+            it('warns on fields with no label', async () => {
+                const hits = await check('a11y-form-label', doc({
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<input type="email" name="email">',
+                        '<select name="topic"></select>',
+                        '<textarea id="msg"></textarea>',
+                        '<label for="other">Other</label>',
+                        '</main>',
+                    ],
+                }))
+                expect(hits.map((h) => h.line)).toEqual([8, 9, 10])
+                expect(hits[0].message).toContain('`<input type="email" name="email">` has no label')
+            })
+
+            it('accepts every labelling technique and skips fields that need none', async () => {
+                expect(await check('a11y-form-label', doc({
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<label for="a">A</label><input id="a">',
+                        '<label>B <input name="b"></label>',
+                        '<input aria-label="C">',
+                        '<span id="dl">D</span><textarea aria-labelledby="dl"></textarea>',
+                        '<input type="hidden" name="h"><input type="submit"><input type="button" value="x">',
+                        '</main>',
+                    ],
+                }))).toEqual([])
+            })
+        })
+
+        describe('a11y-link-name', () => {
+            it('warns on a link with no name', async () => {
+                const [hit] = await check('a11y-link-name', doc({
+                    body: ['<main><h1>Hi</h1>', '<a href="https://example.org/"><img src="x.svg"></a>', '</main>'],
+                }))
+                expect(hit.line).toBe(8)
+                expect(hit.message).toContain('link `<a href="https://example.org/">` has no text')
+            })
+
+            it('accepts text, aria-label, image alt; ignores <a> without href', async () => {
+                expect(await check('a11y-link-name', doc({
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<a href="/a">A</a>',
+                        '<a href="/b" aria-label="B"></a>',
+                        '<a href="/c"><img src="c.png" alt="C"></a>',
+                        '<a id="anchor"></a>',
+                        '</main>',
+                    ],
+                }))).toEqual([])
+            })
+        })
+
+        describe('a11y-main', () => {
+            it('warns on no <main>', async () => {
+                const [hit] = await check('a11y-main', doc({ body: ['<div><h1>Hi</h1></div>'] }))
+                expect(hit.line).toBe(6)
+                expect(hit.message).toContain('no `<main>`')
+            })
+
+            it('warns on more than one, at the second', async () => {
+                const [hit] = await check('a11y-main', doc({
+                    body: ['<main><h1>Hi</h1></main>', '<div role="main"></div>'],
+                }))
+                expect(hit.line).toBe(8)
+                expect(hit.message).toContain('more than one `<main>`')
+            })
+
+            it('stays silent with one', async () => {
+                expect(await check('a11y-main', doc())).toEqual([])
+            })
+        })
+
+        describe('a11y-skip-link', () => {
+            it('warns when the first focusable element is not a skip link', async () => {
+                const [hit] = await check('a11y-skip-link', doc({
+                    body: ['<header>', '<a href="/">Home</a>', '</header>', '<main><h1>Hi</h1></main>'],
+                }))
+                expect(hit.line).toBe(8)
+                expect(hit.message).toContain('not a skip link')
+            })
+
+            it('warns when the skip link has no target', async () => {
+                const [hit] = await check('a11y-skip-link', doc({
+                    body: ['<a href="#content">Skip</a>', '<main id="main"><h1>Hi</h1></main>'],
+                }))
+                expect(hit.message).toContain('`#content`, but no element has `id="content"`')
+            })
+
+            it('accepts a skip link to an existing id, past unfocusable markup', async () => {
+                expect(await check('a11y-skip-link', doc({
+                    body: [
+                        '<a name="top"></a><a href="/x" tabindex="-1">x</a>',
+                        '<a class="skip" href="#main">Skip</a>',
+                        '<nav><a href="/">Home</a></nav>',
+                        '<main id="main"><h1>Hi</h1></main>',
+                    ],
+                }))).toEqual([])
+            })
+
+            it('stays silent on a page with nothing focusable', async () => {
+                expect(await check('a11y-skip-link', doc())).toEqual([])
+            })
+        })
+
+        describe('a11y-nav-name', () => {
+            it('warns on each unnamed <nav> when there are several', async () => {
+                const hits = await check('a11y-nav-name', doc({
+                    body: [
+                        '<nav aria-label="Main"></nav>',
+                        '<nav></nav>',
+                        '<main><h1>Hi</h1></main>',
+                        '<nav></nav>',
+                    ],
+                }))
+                expect(hits.map((h) => h.line)).toEqual([8, 10])
+            })
+
+            it('stays silent on a single <nav>, named or not, and on named ones', async () => {
+                expect(await check('a11y-nav-name', doc({
+                    body: ['<nav></nav>', '<main><h1>Hi</h1></main>'],
+                }))).toEqual([])
+                await fs.rm(cwd, { recursive: true, force: true })
+                expect(await check('a11y-nav-name', doc({
+                    body: [
+                        '<nav aria-label="Main"></nav>',
+                        '<span id="f">Footer</span><nav aria-labelledby="f"></nav>',
+                        '<main><h1>Hi</h1></main>',
+                    ],
+                }))).toEqual([])
+            })
+        })
+
+        describe('a11y-duplicate-id', () => {
+            it('warns once per repeated id, at its second use', async () => {
+                const hits = await check('a11y-duplicate-id', doc({
+                    body: [
+                        '<main id="x"><h1>Hi</h1>',
+                        '<p id="x"></p>',
+                        '<p id="x"></p>',
+                        '</main>',
+                    ],
+                }))
+                expect(hits).toHaveLength(1)
+                expect(hits[0].line).toBe(8)
+                expect(hits[0].message).toContain('`id="x"` is used more than once')
+            })
+
+            it('stays silent on unique ids', async () => {
+                expect(await check('a11y-duplicate-id', doc({
+                    body: ['<main id="a"><h1 id="b">Hi</h1></main>'],
+                }))).toEqual([])
+            })
+        })
+
+        describe('a11y-viewport-zoom', () => {
+            it('warns when zoom is blocked', async () => {
+                const [hit] = await check('a11y-viewport-zoom', doc({
+                    head: [
+                        '<title>T</title>',
+                        '<meta name="viewport" content="width=device-width, maximum-scale=1.0, user-scalable=no">',
+                    ],
+                }))
+                expect(hit.line).toBe(5)
+                expect(hit.message).toContain('`user-scalable=no` and `maximum-scale=1.0`')
+            })
+
+            it('accepts a viewport that allows zoom to 200%', async () => {
+                expect(await check('a11y-viewport-zoom', doc({
+                    head: [
+                        '<title>T</title>',
+                        '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">',
+                    ],
+                }))).toEqual([])
+            })
+        })
+
+        describe('a11y-link-lang (opt-in)', () => {
+            it('warns on hreflang with no matching lang', async () => {
+                const [hit] = await check('a11y-link-lang', doc({
+                    body: ['<main><h1>Hi</h1>', '<a href="/de/" hreflang="de">Deutsch</a>', '</main>'],
+                }), { enable: true })
+                expect(hit.line).toBe(8)
+                expect(hit.message).toContain('`hreflang="de"` but no matching `lang`')
+                expect(hit.message).toContain('WCAG 3.1.2')
+            })
+
+            it('accepts lang on the link, an ancestor or inside it', async () => {
+                expect(await check('a11y-link-lang', doc({
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<a href="/de/" hreflang="de" lang="de">Deutsch</a>',
+                        '<span lang="es"><a href="/es/" hreflang="es-ES">Español</a></span>',
+                        '<a href="/fr/" hreflang="fr"><span lang="fr">Français</span></a>',
+                        '<a href="/" hreflang="x-default">Home</a>',
+                        '</main>',
+                    ],
+                }), { enable: true })).toEqual([])
+            })
+        })
+
+        describe('a11y-target-blank (opt-in)', () => {
+            it('warns on target="_blank"', async () => {
+                const [hit] = await check('a11y-target-blank', doc({
+                    body: ['<main><h1>Hi</h1>', '<a href="https://example.org/" target="_blank">Ex</a>', '</main>'],
+                }), { enable: true })
+                expect(hit.line).toBe(8)
+                expect(hit.message).toContain('opens a new window')
+            })
+
+            it('stays silent on links without it', async () => {
+                expect(await check('a11y-target-blank', doc({
+                    body: ['<main><h1>Hi</h1>', '<a href="/x" target="_self">X</a>', '</main>'],
+                }), { enable: true })).toEqual([])
+            })
+        })
+
+        describe('a11y-reduced-motion (opt-in, CSS)', () => {
+            const enabled = 'rules:\n  a11y-reduced-motion: warning\n'
+
+            it('warns on motion with no reduced-motion query, at the line, without source', async () => {
+                await buildSite()
+                await write('config/validate.yaml', enabled)
+                await write('public/assets/site.css',
+                    '/* animation: spin 1s; */\nbody { margin: 0; }\n.x {\n  animation: spin 1s;\n}\nhtml { scroll-behavior: smooth; }\n')
+                const results = validateOutput({ cwd })
+
+                expect(results).toEqual([
+                    expect.objectContaining({
+                        file: 'public/assets/site.css',
+                        line: 4,
+                        severity: 'warning',
+                        rule: 'a11y-reduced-motion',
+                    }),
+                ])
+                expect(results[0]).not.toHaveProperty('source')
+                expect(results[0].message).toContain('`scroll-behavior: smooth` and `animation`')
+            })
+
+            it('stays silent with a prefers-reduced-motion query, or without motion', async () => {
+                await buildSite()
+                await write('config/validate.yaml', enabled)
+                await write('public/a.css',
+                    'html { scroll-behavior: smooth; }\n@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }\n')
+                await write('public/b.css', '.x { animation: none; }\n/* scroll-behavior: smooth */\n')
+                expect(validateOutput({ cwd })).toEqual([])
+            })
+
+            it('collapses the same finding across stylesheets', async () => {
+                await buildSite()
+                await write('config/validate.yaml', enabled)
+                await write('public/a.css', 'html { scroll-behavior: smooth; }\n')
+                await write('public/b.css', 'html { scroll-behavior: smooth; }\n')
+                const results = validateOutput({ cwd })
+                expect(results).toHaveLength(1)
+                expect(results[0].files).toHaveLength(2)
+            })
         })
     })
 

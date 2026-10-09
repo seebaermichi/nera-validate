@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     An unknown level is reported as `config-invalid`.
 -   First output rule, `a11y-html-lang` (warning): `<html>` without a non-empty
     `lang` (WCAG 3.1.1).
+-   The rest of the accessibility rules (slice 2), all hints in English with
+    the WCAG criterion: `a11y-title` (2.4.2), `a11y-h1` (1.3.1),
+    `a11y-heading-skip` (1.3.1), `a11y-img-alt` (1.1.1), `a11y-form-label`
+    (1.3.1, 4.1.2), `a11y-link-name` (2.4.4, 4.1.2), `a11y-main` (1.3.1),
+    `a11y-skip-link` (2.4.1), `a11y-nav-name` (1.3.1), `a11y-duplicate-id`
+    (4.1.2) and `a11y-viewport-zoom` (1.4.4) as warnings; `a11y-link-lang`
+    (3.1.2), `a11y-target-blank` (3.2.5) and `a11y-reduced-motion` (2.3.3)
+    opt-in (`off` until enabled in `config/validate.yaml`).
+-   `validateOutput` also reads the output's CSS files, for
+    `a11y-reduced-motion` (plain text matching, no CSS parser). CSS findings
+    carry no `source`, and `validate_ignore` does not apply to them.
 -   Dependencies `htmlparser2` ^10.1.0 and `domutils` ^3.2.2 — the last majors
     that keep the Node >= 20 floor (11+ require >= 20.19).
 

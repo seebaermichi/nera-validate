@@ -112,7 +112,8 @@ function collapse(findings) {
 /**
  * Check a site's BUILT output for accessibility, privacy and legal-notice
  * problems a parser can decide (ROADMAP-compliance.md). Read-only, like
- * validateSite, but over `dir` (default `public/`) rather than the sources — so
+ * validateSite, but over `dir` (default `public/`) rather than the sources — its
+ * HTML, and its CSS for the rules that read stylesheets — so
  * it needs a build first and throws when there is no HTML to read.
  *
  * Every rule is a hint and a warning by default; `config/validate.yaml`
@@ -138,6 +139,8 @@ export function validateOutput({ cwd = process.cwd(), dir = 'public' } = {}) {
     const model = resolveSiteModel({ cwd })
     const levels = loadRuleLevels(cwd, model.folders.config, configFindings)
     const activeRules = OUTPUT_RULES.filter((r) => levels[r.id] !== 'off')
+    const htmlRules = activeRules.filter((r) => r.kind !== 'css')
+    const cssRules = activeRules.filter((r) => r.kind === 'css')
     const pagesDir = path.resolve(cwd, model.folders.pages)
 
     const findings = []
@@ -148,7 +151,7 @@ export function validateOutput({ cwd = process.cwd(), dir = 'public' } = {}) {
         const ignored = sourceAbs ? ignoredRules(sourceAbs) : []
         const page = parseHtml(fssync.readFileSync(abs, 'utf-8'))
 
-        for (const rule of activeRules) {
+        for (const rule of htmlRules) {
             if (ignored.includes(rule.id)) continue
             for (const hit of rule.check(page)) {
                 findings.push({
@@ -158,6 +161,25 @@ export function validateOutput({ cwd = process.cwd(), dir = 'public' } = {}) {
                     rule: rule.id,
                     message: hit.message,
                     ...(source && { source }),
+                })
+            }
+        }
+    }
+
+    // Stylesheets have no page behind them, so no `source` and no
+    // `validate_ignore`: CSS rules are set for the whole site in
+    // config/validate.yaml only.
+    const cssFiles = cssRules.length ? walkFiles(outDir, '.css').sort() : []
+    for (const abs of cssFiles) {
+        const text = fssync.readFileSync(abs, 'utf-8')
+        for (const rule of cssRules) {
+            for (const hit of rule.check({ text })) {
+                findings.push({
+                    file: rel(cwd, abs),
+                    line: hit.line,
+                    severity: levels[rule.id],
+                    rule: rule.id,
+                    message: hit.message,
                 })
             }
         }

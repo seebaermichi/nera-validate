@@ -1,7 +1,8 @@
 # ROADMAP — output checks: accessibility, privacy and legal hints
 
 > **Status: spec, decisions settled 2026-10-09. Slice 1 (infrastructure +
-> `a11y-html-lang`) implemented 2026-10-09, unreleased; slices 2–5 open.**
+> `a11y-html-lang`) and slice 2 (the rest of the `a11y-*` table) implemented
+> 2026-10-09, unreleased; slices 3–5 open.**
 >
 > This document is the single source of truth for teaching `@nera-static/validate`
 > to check the **built HTML** of a Nera site for accessibility (WCAG / BITV /
@@ -222,6 +223,44 @@ run is not proof of compliance.
    `config-invalid` warning and the default is kept; rule ids the release does
    not know are ignored silently (forward compatibility).
 2. **Accessibility rules.** The `a11y-*` table.
+   **Done 2026-10-09** (rules in `src/output-rules.js`, tests in
+   `test/output.test.js`). No new dependency: `domutils` predicates were
+   enough, so no `css-select`. CSS rules carry `kind: 'css'`; `validateOutput`
+   runs them over every `.css` file in the output as plain text, and their
+   findings have no `source` and ignore `validate_ignore`. Messages name an
+   element by its identifying attribute (`src`, `href`, `type`/`name`/`id`)
+   so the same template element collapses across pages while different
+   elements stay apart. Choices made on the way:
+   - `a11y-h1`, `a11y-main`: "none" is anchored at `<body>`, "more than one"
+     is one finding at the second element. `a11y-main` also counts
+     `role="main"`.
+   - `a11y-heading-skip`: only jumps *down* by more than one level; the first
+     heading is the baseline (a missing `h1` is `a11y-h1`'s job).
+   - `a11y-form-label`: also exempts `reset` and `image` inputs (they carry
+     their own name); a `title` attribute does not count as a label.
+   - `a11y-link-name`: also accepts `aria-labelledby`; text inside an inline
+     `<svg>` (its `<title>`) counts as text.
+   - `a11y-skip-link`: a page with nothing focusable is silent. "Focusable" is
+     approximate — links/areas with `href`, form controls not `disabled`,
+     `iframe`, `summary`, `audio`/`video[controls]`, any `tabindex` ≥ 0 — and
+     cannot see `display: none`. A `#id` link whose target is missing gets its
+     own message.
+   - `a11y-duplicate-id`: one finding per repeated id, at its second use.
+   - `a11y-viewport-zoom`: `user-scalable` of `no`, `0` or `false`, or
+     `maximum-scale` < 2; one finding naming both when both are set.
+   - `a11y-link-lang`: matches on the primary subtag (`es-ES` ↔ `es`); the
+     `lang` may sit on the link, its nearest ancestor with one, or an element
+     inside it; `hreflang="x-default"` is skipped.
+   - `a11y-reduced-motion`: comments are blanked first; `animation: none`
+     does not count; `transition` is not checked. A collapsed CSS finding
+     still says "on N pages" (the collapse wording from slice 1).
+   - Plausibility run against `nera-website` (built from `81c94fc`), defaults:
+     three findings — `a11y-skip-link` (105 pages, the header has none),
+     `a11y-nav-name` (48 pages, plugin-page-pagination's unnamed `<nav>`),
+     `a11y-form-label` (3 search pages, plugin-search's input). With the
+     opt-ins on: `a11y-target-blank` on the header/footer GitHub and npm links
+     and the plugin catalog; `a11y-link-lang` and `a11y-reduced-motion` stay
+     silent (the language switch sets `lang`; the CSS has no motion).
 3. **Privacy and legal rules.** The `privacy-*` and `legal-*` tables.
 4. **CLI and docs.** `nera check` and `nera build --check` in `nera-cli`,
    `--output` in the validate bin; `nera build --check` in `nera-website`'s CI
