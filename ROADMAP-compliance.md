@@ -4,8 +4,9 @@
 > `a11y-html-lang`), slice 2 (the rest of the `a11y-*` table), slice 3 (the
 > `privacy-*` and `legal-*` tables) and slice 4 (`nera check`, `nera build
 > --check`, `--output`, READMEs, CLI docs) implemented 2026-10-09; slice 5
-> (field test, then release) done 2026-10-09 — validate 1.2.0, then nera with
-> `nera check`.**
+> (field test, then release) done 2026-10-09 — validate 1.2.0 and nera 1.3.0
+> published, nera-website on them with `nera build --check` in CI. All five
+> slices done.**
 >
 > This document is the single source of truth for teaching `@nera-static/validate`
 > to check the **built HTML** of a Nera site for accessibility (WCAG / BITV /
@@ -393,6 +394,15 @@ run is not proof of compliance.
 
    No rule changed after the field test, so the ids and defaults released in
    1.2.0 are the ones tested.
+   **Released 2026-10-09:** `@nera-static/validate` 1.2.0 (tag `v1.2.0`), then
+   `@nera-static/nera` 1.3.0 (`^1.2.0`, tag `v1.3.0`), both via CI OIDC. The
+   held nera-cli and nera-website commits went out with them. nera-website
+   moved to `@nera-static/nera` ^1.3.0 and runs `npm run build -- --check` in
+   **`.github/workflows/test.yml`**, not `deploy.yml` as planned above: the
+   test workflow is the CI that builds on every push and pull request
+   (decision 5), and a hint promoted to `error` should fail that check, not
+   stop a deploy. The deploy workflow keeps a plain build. nera-website's own
+   three findings (slice 2) remain warnings there.
 
 ## Decisions (2026-10-09)
 
