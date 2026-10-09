@@ -1,5 +1,6 @@
-// Human-readable formatting for `validateSite` results, shared by this package's
-// `nera-validate` bin and the `nera validate` subcommand so their output agrees.
+// Human-readable formatting for `validateSite` and `validateOutput` results,
+// shared by this package's `nera-validate` bin and the `nera validate` /
+// `nera check` subcommands so their output agrees.
 
 const COLORS = {
     error: '\x1b[31m', // red
@@ -44,4 +45,16 @@ export function formatResults(results) {
     out.push('')
     out.push(`${errors} error(s), ${warnings} warning(s)`)
     return out.join('\n')
+}
+
+// The reminder every output check ends with: a clean run says nothing about the
+// problems a parser cannot see, and the hints are not legal advice.
+export const OUTPUT_NOTE =
+    'Automated checks find only part of the accessibility problems (about a ' +
+    'third of WCAG failures) — a clean run is not proof of compliance, and ' +
+    'these hints are not legal advice.'
+
+// `formatResults` for `validateOutput`: the same report, ending with OUTPUT_NOTE.
+export function formatOutputResults(results) {
+    return `${formatResults(results)}\n${paint(OUTPUT_NOTE, COLORS.dim)}`
 }

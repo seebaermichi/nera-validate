@@ -4,11 +4,11 @@ import YAML from 'yaml'
 import { resolveSiteModel, resolveEntry } from '@nera-static/core'
 import { extractFrontmatter, frontmatterKeyLine } from './src/frontmatter.js'
 import { collectIncludeFindings } from './src/pug-refs.js'
-import { formatResults } from './src/format.js'
+import { formatResults, formatOutputResults, OUTPUT_NOTE } from './src/format.js'
 import { walkFiles } from './src/walk.js'
 import { validateOutput } from './src/output.js'
 
-export { formatResults, validateOutput }
+export { formatResults, formatOutputResults, OUTPUT_NOTE, validateOutput }
 
 const rel = (cwd, abs) => path.relative(cwd, abs).split(path.sep).join('/')
 

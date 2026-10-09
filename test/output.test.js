@@ -2,7 +2,15 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import path from 'path'
 import fs from 'fs/promises'
 import os from 'os'
-import { validateOutput, hasErrors, formatResults } from '../index.js'
+import { spawnSync } from 'child_process'
+import { fileURLToPath } from 'url'
+import {
+    validateOutput,
+    hasErrors,
+    formatResults,
+    formatOutputResults,
+    OUTPUT_NOTE,
+} from '../index.js'
 
 let cwd
 
@@ -1009,5 +1017,58 @@ describe('validateOutput', () => {
         expect(out).toContain('public/index.html')
         expect(out).toContain('a11y-html-lang')
         expect(out).toContain('0 error(s), 1 warning(s)')
+    })
+
+    it('ends the output report with the not-proof-of-compliance note', async () => {
+        await buildSite()
+        const out = formatOutputResults(validateOutput({ cwd }))
+        expect(out).toContain('No problems found.')
+        expect(out.trimEnd().endsWith(OUTPUT_NOTE)).toBe(true)
+    })
+})
+
+// The bin, run as a process: `--output` is the output pass, without it the
+// sources are checked as before.
+describe('nera-validate --output', () => {
+    const bin = fileURLToPath(new URL('../bin/nera-validate.js', import.meta.url))
+    const runBin = (...args) =>
+        spawnSync(process.execPath, [bin, ...args], {
+            cwd,
+            encoding: 'utf-8',
+            env: { ...process.env, NO_COLOR: '1' },
+        })
+
+    it('checks public/ and exits 0 on warnings alone', async () => {
+        await buildSite()
+        await write('public/index.html', page(''))
+        const { status, stdout } = runBin('--output')
+        expect(status).toBe(0)
+        expect(stdout).toContain('a11y-html-lang')
+        expect(stdout).toContain('0 error(s), 1 warning(s)')
+        expect(stdout).toContain(OUTPUT_NOTE)
+    })
+
+    it('exits 1 when a rule promoted to error fires', async () => {
+        await buildSite()
+        await write('public/index.html', page(''))
+        await write('config/validate.yaml', 'rules:\n  a11y-html-lang: error\n')
+        const { status, stdout } = runBin('--output')
+        expect(status).toBe(1)
+        expect(stdout).toContain('1 error(s), 0 warning(s)')
+    })
+
+    it('says to build first when public/ is missing', async () => {
+        await write('config/app.yaml', 'name: Test\nlang: en\n')
+        const { status, stderr } = runBin('--output')
+        expect(status).toBe(1)
+        expect(stderr).toContain('run `nera build` first')
+    })
+
+    it('checks the sources without the flag', async () => {
+        await buildSite()
+        await write('public/index.html', page(''))
+        const { stdout } = runBin()
+        expect(stdout).not.toContain('a11y-html-lang')
+        expect(stdout).not.toContain(OUTPUT_NOTE)
     })
 })

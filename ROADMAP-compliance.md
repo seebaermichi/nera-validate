@@ -1,9 +1,11 @@
 # ROADMAP — output checks: accessibility, privacy and legal hints
 
 > **Status: spec, decisions settled 2026-10-09. Slice 1 (infrastructure +
-> `a11y-html-lang`), slice 2 (the rest of the `a11y-*` table) and slice 3 (the
-> `privacy-*` and `legal-*` tables) implemented 2026-10-09, unreleased; slices
-> 4–5 open.**
+> `a11y-html-lang`), slice 2 (the rest of the `a11y-*` table), slice 3 (the
+> `privacy-*` and `legal-*` tables) and slice 4 (`nera check`, `nera build
+> --check`, `--output`, READMEs, CLI docs) implemented 2026-10-09, unreleased;
+> slice 4's nera-cli and nera-website commits are held locally until the
+> validate release (decision 8); slice 5 open.**
 >
 > This document is the single source of truth for teaching `@nera-static/validate`
 > to check the **built HTML** of a Nera site for accessibility (WCAG / BITV /
@@ -317,8 +319,42 @@ run is not proof of compliance.
    both READMEs; the CLI docs page on nera.js.org in all three languages
    (`nera-website/pages/docs/cli.md`, `pages/de/docs/cli.md`,
    `pages/es/docs/cli.md`).
+   **Done 2026-10-09**, except the `nera-website` CI workflow, which waits for
+   the release (decision 5). Order of publishing: decision 8. Structure added:
+   - validate: `formatOutputResults(results)` and `OUTPUT_NOTE` — the shared
+     report ending with the reminder that a clean run is not proof of
+     compliance and the hints are not legal advice, so the bin and the CLI
+     print the same text. `formatResults`, and so `nera validate`'s output,
+     is unchanged. The bin's `--output` runs `validateOutput` with the same
+     exit-code rule; its tests spawn the bin.
+   - nera-cli: `src/commands/check.js#runCheck` returns the exit code like
+     `runValidate`; the "run `nera build` first" error is validateOutput's own
+     throw, printed by the bin's `❌` handler (exit 1). `runBuild(args)` now
+     returns an exit code too — 0, or `runCheck()`'s after `--check` — and
+     the bin sets `process.exitCode` from it rather than calling
+     `process.exit`, so a plain build still ends on its own.
+   - READMEs: validate carries the full rule tables (id, default, WCAG
+     criterion or law); nera-cli a summary and a link to them. The website's
+     CLI page has the compact table (id, default, basis) in all three
+     languages; its Spanish config example uses `legal.*.es`, since decision 7
+     leaves Spanish pages to config.
+   - Plausibility run: `nera check` (nera-cli checkout, validate linked) over a
+     scratch copy of `nera-website` built from `81c94fc` plus the new docs:
+     exit 0, the three findings of slice 2 (`a11y-skip-link` on 105 pages,
+     `a11y-nav-name` on 48, `a11y-form-label` on 3) and the reminder; with
+     `a11y-form-label: error` exit 1; with `public/` removed "run `nera build`
+     first", exit 1 (`nera-validate --output` the same). `nera build --check`
+     from a CLI checkout cannot build that copy: core resolves npm plugins
+     from its own `node_modules`, not the site's, so it is proven by the
+     nera-cli tests on a scaffolded site instead. Inside an installed site
+     core sits in the site's `node_modules` and this does not arise.
 5. **Field test** against `michael-becker-berlin.de` (acceptance criteria below),
-   then release validate and nera.
+   then release validate and nera. Then, in this order: validate 1.2.0 (tag);
+   in nera-cli `"@nera-static/validate": "^1.2.0"` + lockfile + a `### Changed`
+   CHANGELOG line, push with the held slice-4 commit, release nera; in
+   nera-website push the held docs commit and add `nera build --check` to
+   `.github/workflows/deploy.yml` (the step that runs `npm run build` today,
+   decision 5).
 
 ## Decisions (2026-10-09)
 
@@ -356,6 +392,21 @@ The open questions of the first draft, settled with the maintainer:
    Rejected: extending the word list (Spanish "Aviso legal", "Privacidad" on
    nera-website) — each added language is upkeep, and any language still
    missing would get false findings.
+
+8. **Publishing order for slice 4: develop against the local validate, hold
+   the pushes** (settled during slice 4). nera-cli pins
+   `@nera-static/validate` `^1.0.0` and its CI runs `npm ci` against the
+   lockfile, so `nera check` cannot pass there before validate ships
+   `validateOutput`. nera-cli was developed with
+   `npm install ../nera-validate --no-save` (no change to `package.json` or the
+   lockfile), and its slice-4 commit sits on local `main`, unpushed, until
+   validate 1.2.0 is released in slice 5; the range bump follows then, in its
+   own commit. The nera-website docs commit is held the same way, so the live
+   site never documents an unreleased command; if nera-website must push
+   something else first, that commit moves to a branch. The validate side of
+   slice 4 is self-contained and can be pushed before. Rejected: releasing
+   validate 1.2.0 before the field test — rule ids are stable once released,
+   and a change the field test forces would then be breaking.
 
 ## Open questions
 

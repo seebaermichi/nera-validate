@@ -51,6 +51,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -   `validateOutput` also reads the output's `.js` files, for `privacy-storage`.
 -   Dependencies `htmlparser2` ^10.1.0 and `domutils` ^3.2.2 — the last majors
     that keep the Node >= 20 floor (11+ require >= 20.19).
+-   `nera-validate --output` runs `validateOutput` over the built `public/`
+    (the pass `nera check` runs; this bin has no verbs). Same exit code: 1
+    only when a finding has the level `error`.
+-   `formatOutputResults(results)`: `formatResults` ending with `OUTPUT_NOTE`,
+    the reminder that a clean run is not proof of compliance (automated checks
+    find only part of the WCAG problems) and that the hints are not legal
+    advice. Used by the bin's `--output` and by `nera check`.
+-   README: the output pass — rule tables with default levels and the WCAG
+    criterion or law, `config/validate.yaml`, `validate_ignore`, the site's own
+    host and the German/English link-text heuristic.
 
 ## [1.1.0] - 2026-10-08
 
