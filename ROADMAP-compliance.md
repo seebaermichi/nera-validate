@@ -253,7 +253,7 @@ None at the moment.
 - `validateSite` output is byte-identical before and after this work for every
   existing test and for `nera-website`.
 - A site without `config/validate.yaml` gets only warnings from the new rules;
-  `nera validate --output` exits 0 unless a rule is promoted to `error`.
+  `nera check` exits 0 unless a rule is promoted to `error`.
 - `validateOutput` on a missing or empty `public/` throws a message that says to
   build first.
 - **Field test, `michael-becker-berlin.de`:**
