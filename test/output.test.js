@@ -6,16 +6,27 @@ import { validateOutput, hasErrors, formatResults } from '../index.js'
 
 let cwd
 
+// Footer links to the imprint and privacy policy, named so the legal rules'
+// link-text heuristic finds them.
+const legalFooter =
+    '<footer><a href="/imprint.html">Imprint</a> <a href="/privacy.html">Privacy</a></footer>'
+
 // A page the way core writes it (run through `pretty`), with or without `lang`.
-// Clean for every default rule: a title, one `<main>` with one `<h1>`, and
-// nothing focusable that would need a skip link.
+// Clean for every default rule: a title, a skip link to one `<main>` with one
+// `<h1>`, and links to the legal pages — all on one line, so the lines above
+// stay put.
 const page = (htmlAttrs = ' lang="en"') =>
-    `<!DOCTYPE html>\n<html${htmlAttrs}>\n  <head>\n    <title>T</title>\n  </head>\n  <body>\n    <main><h1>Hi</h1></main>\n  </body>\n</html>\n`
+    `<!DOCTYPE html>\n<html${htmlAttrs}>\n  <head>\n    <title>T</title>\n  </head>\n  <body>\n    <a href="#main">Skip</a><main id="main"><h1>Hi</h1></main>${legalFooter}\n  </body>\n</html>\n`
 
 // A full page around the given head and body markup, one element per line from
 // line 1, so a finding's line is easy to predict: the head starts at line 4,
-// the body's first child sits at line 6 + the number of head lines.
-const doc = ({ head = ['<title>T</title>'], body = ['<main><h1>Hi</h1></main>'] } = {}) =>
+// the body's first child sits at line 6 + the number of head lines. The legal
+// footer follows the body markup unless `footer` is false.
+const doc = ({
+    head = ['<title>T</title>'],
+    body = ['<main><h1>Hi</h1></main>'],
+    footer = true,
+} = {}) =>
     [
         '<!DOCTYPE html>',
         '<html lang="en">',
@@ -24,6 +35,7 @@ const doc = ({ head = ['<title>T</title>'], body = ['<main><h1>Hi</h1></main>'] 
         '</head>',
         '<body>',
         ...body,
+        ...(footer ? [legalFooter] : []),
         '</body>',
         '</html>',
         '',
@@ -320,7 +332,7 @@ describe('validateOutput', () => {
             })
 
             it('stays silent on a page with nothing focusable', async () => {
-                expect(await check('a11y-skip-link', doc())).toEqual([])
+                expect(await check('a11y-skip-link', doc({ footer: false }))).toEqual([])
             })
         })
 
@@ -475,6 +487,367 @@ describe('validateOutput', () => {
                 const results = validateOutput({ cwd })
                 expect(results).toHaveLength(1)
                 expect(results[0].files).toHaveLength(2)
+            })
+        })
+    })
+
+    describe('privacy and legal rules', () => {
+        // Build a site whose index page is `html`, with `config` as
+        // config/validate.yaml, and return the given rule's findings only.
+        async function check(rule, html, { config } = {}) {
+            await buildSite()
+            await write('public/index.html', html)
+            if (config) await write('config/validate.yaml', config)
+            return validateOutput({ cwd }).filter((r) => r.rule === rule)
+        }
+        const thirdParty = () =>
+            validateOutput({ cwd }).filter((r) => r.rule === 'privacy-third-party')
+
+        describe('privacy-third-party', () => {
+            it('warns once per third-party host, at its first use, naming known hosts', async () => {
+                const hits = await check('privacy-third-party', doc({
+                    head: [
+                        '<title>T</title>',
+                        '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter">',
+                        '<script src="https://cdn.example.org/a.js"></script>',
+                    ],
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<img src="//cdn.example.org/b.png" alt="">',
+                        '<img srcset="/x.png 1x, https://img.example.net/x@2x.png 2x" alt="">',
+                        '<iframe src="https://www.youtube.com/embed/abc"></iframe>',
+                        '</main>',
+                    ],
+                }))
+                expect(hits.map((h) => [h.line, h.message.split(' — ')[0]])).toEqual([
+                    [5, 'loads Google Fonts from fonts.googleapis.com'],
+                    [6, 'loads cdn.example.org'],
+                    [11, 'loads img.example.net'],
+                    [12, 'loads a YouTube embed from www.youtube.com'],
+                ])
+                expect(hits[0].message).toContain('sends the visitor\'s IP address')
+                expect(hits[0].message).toContain('LG München I, 3 O 17493/20')
+                expect(hits[1].message).toContain('privacy.allowed_hosts')
+                expect(hits[0].source).toBe('pages/index.md')
+            })
+
+            it('ignores relative URLs, plain links, non-resource <link>s and data: URLs', async () => {
+                expect(await check('privacy-third-party', doc({
+                    head: [
+                        '<title>T</title>',
+                        '<link rel="stylesheet" href="/css/site.css">',
+                        '<link rel="canonical" href="https://other.example/x">',
+                        '<link rel="alternate" hreflang="de" href="https://other.example/de/">',
+                    ],
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<a href="https://github.com/seebaermichi/nera">GitHub</a>',
+                        '<img src="data:image/png;base64,AAAA" alt="">',
+                        '<script src="../js/app.js"></script>',
+                        '</main>',
+                    ],
+                }))).toEqual([])
+            })
+
+            it('treats the origin in app.yaml as the site\'s own, with or without www.', async () => {
+                await buildSite()
+                await write('config/app.yaml', 'name: Test\norigin: https://example.com\n')
+                await write('public/index.html', doc({
+                    head: [
+                        '<title>T</title>',
+                        '<link rel="icon" href="https://www.example.com/favicon.svg">',
+                        '<script src="https://example.com/a.js"></script>',
+                    ],
+                }))
+                expect(thirdParty()).toEqual([])
+            })
+
+            it('falls back to app_origin in config/canonical-links.yaml; app.yaml wins', async () => {
+                await buildSite()
+                await write('config/canonical-links.yaml', 'app_origin: https://nera.js.org\n')
+                await write('public/index.html', doc({
+                    head: ['<title>T</title>', '<link rel="icon" href="https://nera.js.org/favicon.svg">'],
+                }))
+                expect(thirdParty()).toEqual([])
+
+                await write('config/app.yaml', 'name: Test\norigin: https://example.com\n')
+                const [hit] = thirdParty()
+                expect(hit.message).toMatch(/^loads nera\.js\.org/)
+            })
+
+            it('without an origin, counts every absolute URL as third-party', async () => {
+                const [hit] = await check('privacy-third-party', doc({
+                    head: ['<title>T</title>', '<link rel="icon" href="https://example.com/favicon.svg">'],
+                }))
+                expect(hit.message).toMatch(/^loads example\.com/)
+            })
+
+            it('skips hosts listed under privacy.allowed_hosts', async () => {
+                expect(await check('privacy-third-party', doc({
+                    head: ['<title>T</title>', '<script src="https://cdn.example.org/a.js"></script>'],
+                }), { config: 'privacy:\n  allowed_hosts:\n    - CDN.example.org\n' })).toEqual([])
+            })
+
+            it('reads @import, url() and @font-face in CSS, without source', async () => {
+                await buildSite()
+                await write('public/css/site.css', [
+                    '/* @import url("https://commented.example/x.css"); */',
+                    '@import "https://fonts.googleapis.com/css2?family=Inter";',
+                    '.a { background: url(/img/a.png); }',
+                    '@font-face {',
+                    '  src: url(\'https://cdn.example.org/f.woff2\') format("woff2");',
+                    '}',
+                    '.b { background: url("https://cdn.example.org/b.png"); }',
+                    '',
+                ].join('\n'))
+                const hits = validateOutput({ cwd })
+                expect(hits.map((h) => [h.file, h.line, h.message.split(' — ')[0]])).toEqual([
+                    ['public/css/site.css', 2, 'loads Google Fonts from fonts.googleapis.com'],
+                    ['public/css/site.css', 5, 'loads cdn.example.org'],
+                ])
+                expect(hits[0]).not.toHaveProperty('source')
+            })
+
+            it('collapses the same template resource across pages', async () => {
+                await buildSite()
+                const html = doc({
+                    head: ['<title>T</title>', '<script src="https://cdn.example.org/a.js"></script>'],
+                })
+                await write('public/index.html', html)
+                await write('public/about.html', html)
+                const results = thirdParty()
+                expect(results).toHaveLength(1)
+                expect(results[0].files).toHaveLength(2)
+            })
+        })
+
+        describe('privacy-insecure', () => {
+            it('warns on http:// resources and form actions, by element', async () => {
+                const hits = await check('privacy-insecure', doc({
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<img src="http://example.com/a.png" alt="">',
+                        '<form action="http://example.com/send"><button>Send</button></form>',
+                        '</main>',
+                    ],
+                }))
+                expect(hits.map((h) => h.line)).toEqual([8, 9])
+                expect(hits[0].message).toContain('`<img src="http://example.com/a.png">` loads over plain http')
+                expect(hits[1].message).toContain('`<form action="http://example.com/send">` sends its data over plain http')
+                expect(hits[1].message).toContain('Art. 32 DSGVO')
+            })
+
+            it('stays silent on https, relative URLs and plain http links', async () => {
+                expect(await check('privacy-insecure', doc({
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<img src="https://example.com/a.png" alt="">',
+                        '<img src="/a.png" alt="">',
+                        '<a href="http://example.com/">Old site</a>',
+                        '<form action="/send"><button>Send</button></form>',
+                        '</main>',
+                    ],
+                }))).toEqual([])
+            })
+        })
+
+        describe('privacy-storage (opt-in)', () => {
+            const enabled = 'rules:\n  privacy-storage: warning\n'
+
+            it('is off until enabled', async () => {
+                expect(await check('privacy-storage', doc({
+                    body: ['<main><h1>Hi</h1></main>', '<script>localStorage.setItem("a", 1)</script>'],
+                }))).toEqual([])
+            })
+
+            it('warns on an inline script touching device storage, at the line', async () => {
+                const [hit, ...rest] = await check('privacy-storage', doc({
+                    body: [
+                        '<main><h1>Hi</h1></main>',
+                        '<script>',
+                        'const theme = "dark"',
+                        'localStorage.setItem("theme", theme); document.cookie = "a=1"',
+                        '</script>',
+                    ],
+                }), { config: enabled })
+                expect(rest).toEqual([])
+                expect(hit.line).toBe(10)
+                expect(hit.message).toContain('inline `<script>` uses `document.cookie`, `localStorage`')
+                expect(hit.message).toContain('§ 25 TDDDG')
+            })
+
+            it('ignores scripts without storage, external scripts and JSON-LD', async () => {
+                expect(await check('privacy-storage', doc({
+                    body: [
+                        '<main><h1>Hi</h1></main>',
+                        '<script>console.log("hi")</script>',
+                        '<script src="/js/app.js"></script>',
+                        '<script type="application/ld+json">{"localStorage": 1}</script>',
+                    ],
+                }), { config: enabled })).toEqual([])
+            })
+
+            it('reads .js files in the output, without source', async () => {
+                await buildSite()
+                await write('config/validate.yaml', enabled)
+                await write('public/js/app.js', 'const a = 1\nsessionStorage.clear()\n')
+                await write('public/js/plain.js', 'console.log("no storage")\n')
+                const results = validateOutput({ cwd })
+                expect(results).toEqual([
+                    expect.objectContaining({
+                        file: 'public/js/app.js',
+                        line: 2,
+                        rule: 'privacy-storage',
+                    }),
+                ])
+                expect(results[0]).not.toHaveProperty('source')
+                expect(results[0].message).toContain('script uses `sessionStorage`')
+            })
+        })
+
+        describe('legal-imprint-link and legal-privacy-link', () => {
+            const bare = (lang, body) =>
+                doc({ body: ['<main><h1>Hi</h1></main>', ...body], footer: false })
+                    .replace('lang="en"', `lang="${lang}"`)
+
+            it('warn on a page without links to the legal pages, at <body>', async () => {
+                await buildSite()
+                await write('public/index.html', bare('en', []))
+                const results = validateOutput({ cwd }).filter((r) => r.rule.startsWith('legal-'))
+                expect(results.map((r) => [r.rule, r.line])).toEqual([
+                    ['legal-imprint-link', 6],
+                    ['legal-privacy-link', 6],
+                ])
+                expect(results[0].message).toContain('(Impressum, Imprint, Legal notice)')
+                expect(results[0].message).toContain('§ 5 DDG')
+                expect(results[1].message).toContain('Art. 13 DSGVO')
+            })
+
+            it('accept German and English link text, in any case, and aria-label', async () => {
+                await buildSite()
+                await write('public/index.html', bare('de', [
+                    '<a href="/impressum.html">IMPRESSUM</a>',
+                    '<a href="/datenschutz.html" aria-label="Datenschutzerklärung">§</a>',
+                ]))
+                await write('public/en.html', bare('en-GB', [
+                    '<a href="/imprint.html">Legal notice</a>',
+                    '<a href="/privacy.html">Data protection</a>',
+                ]))
+                expect(validateOutput({ cwd }).filter((r) => r.rule.startsWith('legal-'))).toEqual([])
+            })
+
+            it('do not guess for a language without words and without config', async () => {
+                expect(await check('legal-imprint-link', bare('es', [
+                    '<a href="/es/aviso-legal.html">Aviso legal</a>',
+                ]))).toEqual([])
+            })
+
+            it('use legal.<kind> for the page\'s language, comparing paths not text', async () => {
+                const config = [
+                    'legal:',
+                    '  imprint:',
+                    '    es: /es/aviso-legal.html',
+                    '    de: /de/impressum.html',
+                    '',
+                ].join('\n')
+                await buildSite()
+                await write('config/app.yaml', 'name: Test\norigin: https://example.com\n')
+                await write('config/validate.yaml', config)
+                await write('public/es/index.html', bare('es', ['<a href="aviso-legal">Aviso legal</a>']))
+                await write('public/es/a.html', bare('es', ['<a href="https://example.com/es/aviso-legal.html">x</a>']))
+                await write('public/de/index.html', bare('de', ['<a href="/de/kontakt.html">Impressum</a>']))
+                const hits = validateOutput({ cwd }).filter((r) => r.rule === 'legal-imprint-link')
+
+                expect(hits).toEqual([
+                    expect.objectContaining({ file: 'public/de/index.html', line: 6 }),
+                ])
+                expect(hits[0].message).toContain('no link to the imprint (`/de/impressum.html`)')
+            })
+        })
+
+        describe('legal-outdated-law', () => {
+            // A site whose pages all link to /imprint.html and /privacy.html in
+            // the footer; `pages` maps output paths to extra body lines.
+            async function site(pages, config) {
+                await buildSite()
+                if (config) await write('config/validate.yaml', config)
+                for (const [file, body] of Object.entries(pages)) {
+                    await write(`public/${file}`, doc({ body: ['<main><h1>Hi</h1>', ...body, '</main>'] }))
+                }
+                return validateOutput({ cwd }).filter((r) => r.rule === 'legal-outdated-law')
+            }
+
+            it('warns on the legal pages the heuristic finds, once per law, at the line', async () => {
+                const hits = await site({
+                    'imprint.html': ['<p>Angaben gemäß § 5 TMG</p>', '<p>Telemediengesetz</p>', '<p>§ 55 Abs. 2 RStV</p>'],
+                    'privacy.html': ['<p>Cookies: § 25 TTDSG.</p>'],
+                })
+                expect(hits.map((h) => [h.file, h.line, h.message.split(' — ')[0]])).toEqual([
+                    ['public/imprint.html', 8, 'legal page cites the TMG (Telemediengesetz)'],
+                    ['public/imprint.html', 10, 'legal page cites § 55 RStV'],
+                    ['public/privacy.html', 8, 'legal page cites the TTDSG'],
+                ])
+                expect(hits[0].message).toContain('§ 5 DDG')
+            })
+
+            it('ignores other pages, a stray "Datenschutz" link and script text', async () => {
+                const hits = await site({
+                    'imprint.html': ['<p>Angaben gemäß § 5 DDG</p>', '<script>// TMG</script>'],
+                    'blog/cookies.html': ['<p>Das TTDSG heißt jetzt TDDDG.</p>'],
+                    'blog/index.html': ['<a href="/blog/cookies.html">Datenschutz bei Cookie-Bannern</a>'],
+                })
+                expect(hits).toEqual([])
+            })
+
+            it('checks the configured pages instead of the heuristic\'s', async () => {
+                const hits = await site({
+                    'privacy.html': ['<p>TTDSG</p>'],
+                    'rechtliches/datenschutz.html': ['<p>§ 25 TTDSG</p>'],
+                }, 'legal:\n  privacy:\n    en: /rechtliches/datenschutz.html\n')
+                expect(hits).toEqual([
+                    expect.objectContaining({ file: 'public/rechtliches/datenschutz.html', line: 8 }),
+                ])
+            })
+        })
+
+        describe('config/validate.yaml values', () => {
+            it('reports unusable legal and privacy values and runs on', async () => {
+                await buildSite()
+                await write('config/validate.yaml', [
+                    'legal:',
+                    '  imprint: [/impressum.html]',
+                    '  privacy:',
+                    '    de: datenschutz.html',
+                    'privacy:',
+                    '  allowed_hosts:',
+                    '    - https://cdn.example.org',
+                    '    - cdn.example.net',
+                    '',
+                ].join('\n'))
+                await write('public/index.html', doc({
+                    head: [
+                        '<title>T</title>',
+                        '<script src="https://cdn.example.org/a.js"></script>',
+                        '<script src="https://cdn.example.net/a.js"></script>',
+                    ],
+                }))
+                const results = validateOutput({ cwd })
+                const config = results.filter((r) => r.rule === 'config-invalid')
+                expect(config.map((r) => r.message.split(' — ')[0])).toEqual([
+                    'legal.imprint must map languages to paths, such as `de: /de/impressum.html`; ignoring it',
+                    'legal.privacy.de is "datenschutz.html"',
+                    'privacy.allowed_hosts has "https://cdn.example.org"',
+                ])
+                expect(config.every((r) => r.severity === 'warning')).toBe(true)
+                expect(results.filter((r) => r.rule === 'privacy-third-party')
+                    .map((r) => r.message.split(' — ')[0])).toEqual(['loads cdn.example.org'])
+            })
+
+            it('reports a legal or privacy key that is not a mapping', async () => {
+                await buildSite()
+                await write('config/validate.yaml', 'legal: yes\nprivacy: [a]\n')
+                const results = validateOutput({ cwd })
+                expect(results.map((r) => r.rule)).toEqual(['config-invalid', 'config-invalid'])
             })
         })
     })

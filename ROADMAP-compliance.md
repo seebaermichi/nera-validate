@@ -1,8 +1,9 @@
 # ROADMAP — output checks: accessibility, privacy and legal hints
 
 > **Status: spec, decisions settled 2026-10-09. Slice 1 (infrastructure +
-> `a11y-html-lang`) and slice 2 (the rest of the `a11y-*` table) implemented
-> 2026-10-09, unreleased; slices 3–5 open.**
+> `a11y-html-lang`), slice 2 (the rest of the `a11y-*` table) and slice 3 (the
+> `privacy-*` and `legal-*` tables) implemented 2026-10-09, unreleased; slices
+> 4–5 open.**
 >
 > This document is the single source of truth for teaching `@nera-static/validate`
 > to check the **built HTML** of a Nera site for accessibility (WCAG / BITV /
@@ -163,7 +164,7 @@ translate messages by id). `opt-in` rules are `off` until enabled in
 
 | rule | finds | default |
 |---|---|---|
-| `privacy-third-party` | a resource loaded from a host other than the site's own (`origin` in `app.yaml`) or a relative URL: `script[src]`, `link[rel=stylesheet\|preload\|icon\|modulepreload]`, `img`, `iframe`, `video`, `audio`, `source`, and `@import`/`url()`/`@font-face` in CSS. Plain `<a href>` links are not resources and are ignored. Hosts in `privacy.allowed_hosts` are skipped. Known hosts get a specific message (Google Fonts → IP transfer, cf. LG München I, 3 O 17493/20; YouTube/Vimeo embeds; Google Analytics/Tag Manager; maps) | warning |
+| `privacy-third-party` | a resource loaded from a host other than the site's own (`origin` in `app.yaml`, else `app_origin` in `canonical-links.yaml` — decision 6) or a relative URL: `script[src]`, `link[rel=stylesheet\|preload\|icon\|modulepreload]`, `img`, `iframe`, `video`, `audio`, `source`, and `@import`/`url()`/`@font-face` in CSS. Plain `<a href>` links are not resources and are ignored. Hosts in `privacy.allowed_hosts` are skipped. Known hosts get a specific message (Google Fonts → IP transfer, cf. LG München I, 3 O 17493/20; YouTube/Vimeo embeds; Google Analytics/Tag Manager; maps) | warning |
 | `privacy-insecure` | an `http://` resource or a `<form action="http://…">` | warning |
 | `privacy-storage` | a site-owned script (inline or under `public/`) touching `document.cookie`, `localStorage`, `sessionStorage` or `indexedDB` — § 25 TDDDG: storage on the device needs consent unless strictly necessary. A heuristic: the hint asks the owner to confirm it is necessary | opt-in |
 
@@ -171,7 +172,7 @@ translate messages by id). `opt-in` rules are `off` until enabled in
 
 | rule | finds | default |
 |---|---|---|
-| `legal-imprint-link` | a page with no link to the imprint (§ 5 DDG: "easily recognisable, directly reachable"). Uses `legal.imprint` for the page's `lang`; without config, falls back to link text matching `Impressum`, `Imprint` or `Legal notice` | warning |
+| `legal-imprint-link` | a page with no link to the imprint (§ 5 DDG: "easily recognisable, directly reachable"). Uses `legal.imprint` for the page's `lang`; without config, falls back to link text matching `Impressum`, `Imprint` or `Legal notice` — on `de`/`en` pages only (decision 7) | warning |
 | `legal-privacy-link` | the same for the privacy policy (`Datenschutz`, `Privacy`, `Data protection`) | warning |
 | `legal-outdated-law` | the imprint or privacy page cites a superseded law: `TMG`/`Telemediengesetz` (→ DDG since 2024-05-14), `TTDSG` (→ TDDDG), `§ 55 RStV` (→ § 18 MStV) | warning |
 
@@ -262,6 +263,54 @@ run is not proof of compliance.
      and the plugin catalog; `a11y-link-lang` and `a11y-reduced-motion` stay
      silent (the language switch sets `lang`; the CSS has no motion).
 3. **Privacy and legal rules.** The `privacy-*` and `legal-*` tables.
+   **Done 2026-10-09** (rules in `src/output-rules.js`, config and the
+   site-wide pass in `src/output.js`, tests in `test/output.test.js`). No new
+   dependency. Structure added: `validateOutput` now parses every page first,
+   then checks; page rules also get `url` (the output file's site path) and
+   `site` (own host, allowed hosts, legal config, legal pages). A page rule may
+   read CSS or JavaScript too, via `checkCss` / `checkJs` (`kind: 'css'` stays
+   for CSS-only rules); `.js` findings, like CSS ones, have no `source`.
+   `config/validate.yaml` gains `legal.imprint`, `legal.privacy` and
+   `privacy.allowed_hosts`; an unusable value (not a mapping, a path not
+   starting with `/`, a URL instead of a host name) is a `config-invalid`
+   warning and is ignored. The two spec gaps were settled as decisions 6 and 7.
+   Choices made on the way:
+   - `privacy-third-party`: one finding per host per file, at its first use,
+     naming the host — the host is what receives the IP address, and the
+     message stays the same across pages so a template resource collapses.
+     `srcset` candidates and `video[poster]` count; `<link rel>` other than
+     `stylesheet`/`preload`/`icon`/`modulepreload` (canonical, alternate,
+     preconnect) does not. `allowed_hosts` matches the exact host. In CSS:
+     `url()` (which covers `@font-face src`) and `@import "…"`, comments blanked.
+   - `privacy-insecure`: HTML only, one finding per element, named by the
+     attribute holding the `http://` URL. Plain `<a href="http://…">` links are
+     not resources and stay silent.
+   - `privacy-storage`: inline scripts that run as JavaScript (no `type`,
+     `module`, or a JavaScript MIME type — JSON-LD and import maps are skipped)
+     and every `.js` file in the output; one finding per script listing what it
+     touches. Plain text: a comment mentioning `localStorage` counts too.
+   - `legal-*-link`: link text and `aria-label`, case-insensitive substring
+     (`Datenschutzerklärung` matches `Datenschutz`). With config, the link's
+     `href` is resolved against the page and compared as a path: `/x`,
+     `/x.html`, `/x/` and an absolute URL on the own host are the same page.
+     Anchored at `<body>`.
+   - `legal-outdated-law`: the legal pages are, per kind and language, the
+     configured path, else the target the heuristic finds on the **most**
+     pages — the footer link wins over a blog post linked as "Datenschutz bei
+     Cookie-Bannern". One finding per law per page, at its first mention in
+     visible text (scripts and styles excluded). Matches `TMG` /
+     `Telemediengesetz`, `TTDSG` / its long name, `§ 55 (Abs. n) RStV`.
+   - Plausibility run against `nera-website` (built from `81c94fc` in a
+     scratch copy): no `privacy-*` or `legal-*` findings, with defaults and
+     with every opt-in plus a `legal` config for all three languages — checked
+     against the HTML: the absolute `nera.js.org` URLs are canonical/alternate
+     `<link>`s, the CSS loads only its own fonts, `search.js` touches no
+     storage, the heuristic identifies exactly `/legal-notice`, `/privacy` and
+     their `/de/` versions (Spanish is left to config), and those pages cite
+     § 5 DDG and § 18 MStV. Four faults planted in the copy (a Google Fonts
+     stylesheet on two pages, `§ 5 TMG` in the Spanish imprint, a missing
+     imprint link on `/es/`, `localStorage` in `search.js`) were each reported
+     once, at the right line.
 4. **CLI and docs.** `nera check` and `nera build --check` in `nera-cli`,
    `--output` in the validate bin; `nera build --check` in `nera-website`'s CI
    workflow;
@@ -291,6 +340,22 @@ The open questions of the first draft, settled with the maintainer:
 5. **`nera-website` runs `nera build --check` in CI, not in the pre-push hook.**
    The hook stays `nera validate` so pushing stays fast; the CI workflow builds
    anyway. Wire this up after the release (slice 4).
+6. **The site's own host resolves like `plugin-canonical-links`** (settled
+   during slice 3): `origin` in `config/app.yaml`, else `app_origin` in
+   `config/canonical-links.yaml`; the host counts with and without `www.`.
+   `nera-website` sets only the latter, so a validate-specific key would have
+   duplicated a value sites already have. Without either, only relative URLs
+   are the site's own, and every absolute resource URL is reported by host.
+   Rejected: `app.yaml` only (nera-website would report itself) and a
+   `privacy.origin` key in `config/validate.yaml`.
+7. **The link-text heuristic stays German/English and stays silent
+   elsewhere** (settled during slice 3). It applies to pages whose `<html lang>`
+   has the primary subtag `de` or `en`, or no `lang`; a page in any other
+   language is not checked by `legal-*-link` unless `legal.<kind>.<lang>` names
+   its page, and its legal pages reach `legal-outdated-law` only the same way.
+   Rejected: extending the word list (Spanish "Aviso legal", "Privacidad" on
+   nera-website) — each added language is upkeep, and any language still
+   missing would get false findings.
 
 ## Open questions
 

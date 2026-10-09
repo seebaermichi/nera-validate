@@ -31,6 +31,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 -   `validateOutput` also reads the output's CSS files, for
     `a11y-reduced-motion` (plain text matching, no CSS parser). CSS findings
     carry no `source`, and `validate_ignore` does not apply to them.
+-   Privacy and legal-notice rules (slice 3), hints in English with the law in
+    brackets, never a verdict: `privacy-third-party` (resources loaded from
+    another host, in HTML and CSS; specific messages for Google Fonts, YouTube,
+    Vimeo, Google Analytics / Tag Manager and maps), `privacy-insecure`
+    (`http://` resources and form actions), `legal-imprint-link` (§ 5 DDG),
+    `legal-privacy-link` (Art. 13 DSGVO) and `legal-outdated-law` (TMG, TTDSG,
+    § 55 RStV on the legal pages only) as warnings; `privacy-storage`
+    (`document.cookie`, `localStorage`, `sessionStorage`, `indexedDB` in inline
+    scripts and `.js` files, § 25 TDDDG) opt-in.
+-   `config/validate.yaml` also takes `legal.imprint` / `legal.privacy` (per
+    language, the site path every page must link to) and
+    `privacy.allowed_hosts`. Unusable values are reported as `config-invalid`
+    and ignored.
+-   The site's own host is `origin` in `config/app.yaml`, else `app_origin` in
+    `config/canonical-links.yaml` — the same resolution as
+    `plugin-canonical-links`. Without either, only relative URLs count as the
+    site's own.
+-   `validateOutput` also reads the output's `.js` files, for `privacy-storage`.
 -   Dependencies `htmlparser2` ^10.1.0 and `domutils` ^3.2.2 — the last majors
     that keep the Node >= 20 floor (11+ require >= 20.19).
 

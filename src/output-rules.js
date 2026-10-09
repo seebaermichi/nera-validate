@@ -63,13 +63,309 @@ const blankComments = (css) =>
 
 const lineAt = (text, offset) => text.slice(0, offset).split('\n').length
 
+// ── Privacy and legal helpers ───────────────────────────────────────────────
+
+// The host a URL loads from, lower-cased, or null for a relative URL (always
+// the site's own) and for non-network schemes (`data:`, `blob:`, …).
+function hostOf(url) {
+    if (!/^\s*(?:https?:)?\/\//i.test(url)) return null
+    try {
+        return new URL(url.trim(), 'https://nera.invalid/').hostname.toLowerCase()
+    } catch {
+        return null
+    }
+}
+
+const bare = (host) => host.replace(/^www\./, '')
+
+// The site's own host counts with and without a leading `www.`.
+const isOwnHost = (host, site) =>
+    Boolean(site.ownHost) && bare(host) === bare(site.ownHost)
+
+const isThirdParty = (host, site) =>
+    Boolean(host) && !isOwnHost(host, site) && !site.allowedHosts.has(host)
+
+// Elements whose URL attributes make the browser fetch something on load, and
+// the `<link rel>` tokens that do. A plain `<a href>` is not a resource.
+const RESOURCE_ATTRS = {
+    script: ['src'],
+    link: ['href'],
+    img: ['src', 'srcset'],
+    iframe: ['src'],
+    video: ['src', 'poster'],
+    audio: ['src'],
+    source: ['src', 'srcset'],
+}
+const RESOURCE_RELS = ['stylesheet', 'preload', 'icon', 'modulepreload']
+
+// Every `{ el, name, url }` a page loads, in document order.
+function resources(document) {
+    return all(document, (el) => {
+        if (!(el.name in RESOURCE_ATTRS)) return false
+        if (el.name !== 'link') return true
+        const rels = attr(el, 'rel').toLowerCase().split(/\s+/)
+        return rels.some((r) => RESOURCE_RELS.includes(r))
+    }).flatMap((el) => RESOURCE_ATTRS[el.name]
+        .filter((name) => attr(el, name))
+        .flatMap((name) => (name === 'srcset'
+            ? attr(el, name).split(',').map((c) => c.trim().split(/\s+/)[0])
+            : [attr(el, name)]
+        ).map((url) => ({ el, name, url }))))
+}
+
+// Hosts whose request says more than "a third party": what it is, and what the
+// owner can do about it.
+const KNOWN_HOSTS = [
+    {
+        domains: ['fonts.googleapis.com', 'fonts.gstatic.com'],
+        what: 'Google Fonts',
+        note: 'consider self-hosting the fonts (cf. LG München I, 3 O 17493/20)',
+    },
+    {
+        domains: ['youtube.com', 'youtube-nocookie.com', 'ytimg.com'],
+        what: 'a YouTube embed',
+        note: 'consider a click-to-load placeholder (Art. 6 DSGVO, § 25 TDDDG)',
+    },
+    {
+        domains: ['vimeo.com', 'vimeocdn.com'],
+        what: 'a Vimeo embed',
+        note: 'consider a click-to-load placeholder (Art. 6 DSGVO, § 25 TDDDG)',
+    },
+    {
+        domains: ['google-analytics.com', 'googletagmanager.com'],
+        what: 'Google Analytics / Tag Manager',
+        note: 'tracking that reads or stores data on the device needs consent (§ 25 TDDDG)',
+    },
+    {
+        domains: [
+            'maps.googleapis.com', 'maps.google.com', 'maps.gstatic.com',
+            'tile.openstreetmap.org', 'api.mapbox.com',
+        ],
+        what: 'a map',
+        note: 'consider a click-to-load placeholder (Art. 6 DSGVO)',
+    },
+]
+
+function thirdPartyMessage(host) {
+    const known = KNOWN_HOSTS.find((k) =>
+        k.domains.some((d) => host === d || host.endsWith(`.${d}`)))
+    if (known) {
+        return `loads ${known.what} from ${host} — a third-party request that ` +
+            `sends the visitor's IP address; ${known.note}`
+    }
+    return `loads ${host} — a third-party request that sends the visitor's IP ` +
+        'address; list the host under `privacy.allowed_hosts` once it is ' +
+        'accounted for (Art. 6 DSGVO)'
+}
+
+// One hit per third-party host — the host is what receives the IP address —
+// at its first use. `uses` is `[{ url, line }]` in order.
+function thirdPartyHits(uses, site) {
+    const hits = new Map()
+    for (const { url, line } of uses) {
+        const host = hostOf(url)
+        if (!isThirdParty(host, site) || hits.has(host)) continue
+        hits.set(host, { line, message: thirdPartyMessage(host) })
+    }
+    return [...hits.values()]
+}
+
+// Device storage a script reaches for, by plain text match (no JS parser).
+const STORAGE = [
+    ['`document.cookie`', /\bdocument\.cookie\b/],
+    ['`localStorage`', /\blocalStorage\b/],
+    ['`sessionStorage`', /\bsessionStorage\b/],
+    ['`indexedDB`', /\bindexedDB\b/],
+]
+
+// `{ uses, offset }` for a script's storage access, or null when it has none.
+function storageUse(code) {
+    const found = STORAGE
+        .map(([what, re]) => ({ what, match: re.exec(code) }))
+        .filter((f) => f.match)
+    if (found.length === 0) return null
+    return {
+        uses: found.map((f) => f.what).join(', '),
+        offset: Math.min(...found.map((f) => f.match.index)),
+    }
+}
+
+const storageNote =
+    'storing or reading data on the visitor\'s device needs consent unless ' +
+    'it is strictly necessary; confirm that it is (§ 25 TDDDG)'
+
+// An inline `<script>` that runs as JavaScript (not JSON-LD, an import map or
+// a template).
+const isInlineScript = (el) => {
+    if (el.name !== 'script' || 'src' in el.attribs) return false
+    const type = attr(el, 'type').toLowerCase()
+    return !type || type === 'module' || /^(text|application)\/(javascript|ecmascript)$/.test(type)
+}
+
+// The words the link-text heuristic looks for, and the page languages it
+// applies to. A page in another language is not guessed at: it is checked only
+// when `legal.<kind>` in config/validate.yaml names its page.
+const LEGAL = {
+    imprint: {
+        name: 'the imprint',
+        words: ['Impressum', 'Imprint', 'Legal notice'],
+        law: '§ 5 DDG',
+    },
+    privacy: {
+        name: 'the privacy policy',
+        words: ['Datenschutz', 'Privacy', 'Data protection'],
+        law: 'Art. 13 DSGVO',
+    },
+}
+const HEURISTIC_LANGS = ['de', 'en']
+
+const htmlLang = (document) =>
+    attr(findOne(named('html'), document.children) ?? { attribs: {} }, 'lang')
+        .toLowerCase()
+
+// A site path in one spelling for comparison: `/de/`, `/de/index.html` and
+// `/de/index` are the same page, as are `/x.html`, `/x` and `/x/`.
+const normalizePath = (p) =>
+    p.replace(/\/index(?:\.html)?$/, '/').replace(/\.html$/, '').replace(/(.)\/$/, '$1')
+
+// The normalized site path a link on the page at `url` points to, or null when
+// it leaves the site (another host, `mailto:`, …).
+function ownPath(href, url, site) {
+    let target
+    try {
+        target = new URL(href, `https://nera.invalid${url}`)
+    } catch {
+        return null
+    }
+    if (!['http:', 'https:'].includes(target.protocol)) return null
+    if (target.hostname !== 'nera.invalid' && !isOwnHost(target.hostname, site)) {
+        return null
+    }
+    try {
+        return normalizePath(decodeURI(target.pathname))
+    } catch {
+        return normalizePath(target.pathname)
+    }
+}
+
+// The page's links to its imprint or privacy policy: `{ configured, links }`,
+// where `configured` is the path from `legal.<kind>` for the page's language,
+// if any. Null when the page cannot be checked — no config for its language
+// and a language the link-text heuristic has no words for.
+function legalLinks(kind, { document, url, site }) {
+    const lang = htmlLang(document)
+    const configured = site.legal[kind][lang] ?? site.legal[kind][primary(lang)]
+    const links = all(document, (el) => el.name === 'a' && 'href' in el.attribs)
+    if (configured) {
+        const want = normalizePath(configured)
+        return {
+            configured,
+            links: links.filter((a) => ownPath(attr(a, 'href'), url, site) === want),
+        }
+    }
+    if (lang && !HEURISTIC_LANGS.includes(primary(lang))) return null
+    const words = LEGAL[kind].words.map((w) => w.toLowerCase())
+    return {
+        configured: null,
+        links: links.filter((a) => {
+            const text = `${textContent(a)} ${attr(a, 'aria-label')}`
+                .replace(/\s+/g, ' ').toLowerCase()
+            return words.some((w) => text.includes(w))
+        }),
+    }
+}
+
+/**
+ * The site paths of the imprint and privacy pages, for `legal-outdated-law`.
+ * Per kind and language: the path from `legal.<kind>` when configured, else
+ * the target the link-text heuristic finds on the most pages — the footer link,
+ * not a blog post that happens to mention "Datenschutz".
+ */
+export function findLegalPages(pages, site) {
+    const legalPages = new Set()
+    const counts = new Map()
+    for (const page of pages) {
+        for (const kind of Object.keys(LEGAL)) {
+            const found = legalLinks(kind, { ...page, site })
+            if (!found) continue
+            if (found.configured) {
+                legalPages.add(normalizePath(found.configured))
+                continue
+            }
+            const key = `${kind}\0${primary(htmlLang(page.document))}`
+            if (!counts.has(key)) counts.set(key, new Map())
+            const targets = new Set(found.links
+                .map((a) => ownPath(attr(a, 'href'), page.url, site))
+                .filter(Boolean))
+            for (const t of targets) {
+                counts.get(key).set(t, (counts.get(key).get(t) ?? 0) + 1)
+            }
+        }
+    }
+    for (const targets of counts.values()) {
+        const most = Math.max(...targets.values())
+        for (const [t, n] of targets) if (n === most) legalPages.add(t)
+    }
+    return legalPages
+}
+
+function legalLinkRule(kind) {
+    const { name, words, law } = LEGAL[kind]
+    return ({ document, url, site, lineOf }) => {
+        const found = legalLinks(kind, { document, url, site })
+        if (!found || found.links.length > 0) return []
+        const missing = found.configured
+            ? `page has no link to ${name} (\`${found.configured}\`)`
+            : `page has no link whose text names ${name} ` +
+              `(${words.join(', ')}) — if it is linked under another name, ` +
+              `set \`legal.${kind}\` in config/validate.yaml`
+        return [{
+            line: lineOf(bodyOf(document)),
+            message:
+                `${missing} — it should be easy to find and directly ` +
+                `reachable from every page (${law})`,
+        }]
+    }
+}
+
+// Superseded laws a legal page should no longer cite.
+const OUTDATED_LAWS = [
+    {
+        re: /\bTMG\b|Telemediengesetz/,
+        message:
+            'cites the TMG (Telemediengesetz) — replaced by the DDG on ' +
+            '2024-05-14; the imprint duty is now § 5 DDG',
+    },
+    {
+        re: /\bTTDSG\b|Telekommunikation-Telemedien-Datenschutz-Gesetz/,
+        message:
+            'cites the TTDSG — renamed TDDDG on 2024-05-14; device storage is ' +
+            'now § 25 TDDDG',
+    },
+    {
+        re: /§\s*55\s*(?:Abs\.?\s*\d+\s*)?RStV/,
+        message: 'cites § 55 RStV — replaced by § 18 MStV on 2020-11-07',
+    },
+]
+
+// The page's visible text nodes, in order (script and style content excluded).
+function* textNodes(node) {
+    for (const child of node.children ?? []) {
+        if (child.type === 'text') yield child
+        else if (child.type === 'tag') yield* textNodes(child)
+    }
+}
+
 // The rule catalogue for `validateOutput` (ROADMAP-compliance.md). Each rule
 // gets one parsed page and returns `{ line, message }` hits; the caller adds
 // file, source and the configured severity. Rule ids are stable once released —
 // the platform keys on them — and `level` is the default when
 // config/validate.yaml says nothing (`warning`, or `off` for opt-in rules).
-// A rule with `kind: 'css'` gets each CSS file in the output instead, as
-// `{ text }` — plain text, no CSS parser — and its hits carry no `source`.
+// A page rule also gets `url` (the output file's site path) and `site` (own
+// host, allowed hosts, legal config and legal pages). A rule with `kind: 'css'`
+// gets each CSS file in the output instead, as `{ text, site }` — plain text,
+// no CSS parser — and a page rule may read CSS or JavaScript files too, through
+// `checkCss` / `checkJs`. Hits on those files carry no `source`.
 export const OUTPUT_RULES = [
     {
         id: 'a11y-html-lang',
@@ -398,6 +694,109 @@ export const OUTPUT_RULES = [
                     'but has no `prefers-reduced-motion` query — visitors who ' +
                     'turned motion off still get it (WCAG 2.3.3)',
             }]
+        },
+    },
+    {
+        id: 'privacy-third-party',
+        level: 'warning',
+        check({ document, lineOf, site }) {
+            return thirdPartyHits(
+                resources(document).map(({ el, url }) => ({ url, line: lineOf(el) })),
+                site
+            )
+        },
+        checkCss({ text, site }) {
+            const css = blankComments(text)
+            const uses = []
+            for (const re of [/url\(\s*(['"]?)([^'")]*)\1\s*\)/gi, /@import\s+(['"])([^'"]+)\1/gi]) {
+                for (const m of css.matchAll(re)) {
+                    uses.push({ url: m[2], offset: m.index })
+                }
+            }
+            uses.sort((a, b) => a.offset - b.offset)
+            return thirdPartyHits(
+                uses.map(({ url, offset }) => ({ url, line: lineAt(css, offset) })),
+                site
+            )
+        },
+    },
+    {
+        id: 'privacy-insecure',
+        level: 'warning',
+        check({ document, lineOf }) {
+            const http = (url) => /^\s*http:\/\//i.test(url)
+            const seen = new Set()
+            const hits = resources(document)
+                .filter(({ el, url }) => http(url) && !seen.has(el) && seen.add(el))
+                .map(({ el, name }) => ({
+                    line: lineOf(el),
+                    message:
+                        `${describe(el, [name])} loads over plain http — the ` +
+                        'request can be read and altered on the way; use https ' +
+                        '(Art. 32 DSGVO)',
+                }))
+            const forms = all(document, (el) => el.name === 'form' && http(attr(el, 'action')))
+                .map((form) => ({
+                    line: lineOf(form),
+                    message:
+                        `${describe(form, ['action'])} sends its data over plain ` +
+                        'http — anyone on the way can read what visitors enter; ' +
+                        'use https (Art. 32 DSGVO)',
+                }))
+            return [...hits, ...forms].sort((a, b) => a.line - b.line)
+        },
+    },
+    {
+        id: 'privacy-storage',
+        level: 'off',
+        check({ document, lineOf }) {
+            return all(document, isInlineScript).flatMap((script) => {
+                const code = textContent(script)
+                const use = storageUse(code)
+                if (!use) return []
+                return [{
+                    line: lineOf(script) + code.slice(0, use.offset).split('\n').length - 1,
+                    message: `inline \`<script>\` uses ${use.uses} — ${storageNote}`,
+                }]
+            })
+        },
+        checkJs({ text }) {
+            const use = storageUse(text)
+            if (!use) return []
+            return [{
+                line: lineAt(text, use.offset),
+                message: `script uses ${use.uses} — ${storageNote}`,
+            }]
+        },
+    },
+    {
+        id: 'legal-imprint-link',
+        level: 'warning',
+        check: legalLinkRule('imprint'),
+    },
+    {
+        id: 'legal-privacy-link',
+        level: 'warning',
+        check: legalLinkRule('privacy'),
+    },
+    {
+        id: 'legal-outdated-law',
+        level: 'warning',
+        check({ document, url, site, lineOf }) {
+            if (!site.legalPages.has(normalizePath(url))) return []
+            const hits = []
+            for (const law of OUTDATED_LAWS) {
+                for (const node of textNodes(document)) {
+                    const match = law.re.exec(node.data)
+                    if (!match) continue
+                    hits.push({
+                        line: lineOf(node) + node.data.slice(0, match.index).split('\n').length - 1,
+                        message: `legal page ${law.message}`,
+                    })
+                    break
+                }
+            }
+            return hits.sort((a, b) => a.line - b.line)
         },
     },
 ]
