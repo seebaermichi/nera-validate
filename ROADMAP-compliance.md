@@ -1,6 +1,6 @@
 # ROADMAP — output checks: accessibility, privacy and legal hints
 
-> **Status: spec, awaiting sign-off. No code yet.**
+> **Status: spec, decisions settled 2026-10-09. No code yet.**
 >
 > This document is the single source of truth for teaching `@nera-static/validate`
 > to check the **built HTML** of a Nera site for accessibility (WCAG / BITV /
@@ -153,6 +153,7 @@ translate messages by id). `opt-in` rules are `off` until enabled in
 | `a11y-nav-name` | more than one `<nav>`, and one lacks `aria-label`/`aria-labelledby` | 1.3.1 | warning |
 | `a11y-duplicate-id` | an `id` used twice in one page (breaks `for`, skip links, ARIA references) | 4.1.2 | warning |
 | `a11y-viewport-zoom` | `<meta name=viewport>` with `user-scalable=no` or `maximum-scale` < 2 | 1.4.4 | warning |
+| `a11y-link-lang` | a link with `hreflang` but no `lang` matching it (e.g. the language switch) | 3.1.2 | opt-in |
 | `a11y-target-blank` | `target="_blank"` links (unannounced context change) | 3.2.5 (AAA) | opt-in |
 | `a11y-reduced-motion` | a CSS file with `scroll-behavior: smooth` or `animation` but no `prefers-reduced-motion` query anywhere in it | 2.3.3 (AAA) | opt-in |
 
@@ -183,20 +184,24 @@ pages.
 In `@nera-static/nera` (`nera-cli/src/commands/validate.js`):
 
 ```bash
-nera validate            # unchanged: sources only
-nera validate --output   # sources, then the built output in public/
-nera build --check       # build, then both passes (one command for CI)
+nera validate        # unchanged: sources only
+nera check           # the built output in public/ only (build first)
+nera build --check   # build, then `nera check` — one command for CI
 ```
 
-The standalone `nera-validate` bin gets the same `--output` flag. The summary
-line ends with the reminder that a clean run is not proof of compliance.
+`validate` means the sources, `check` means the output: two verbs keep the two
+passes apart. `nera check` fails with "run `nera build` first" when `public/` is
+missing. The standalone `nera-validate` bin gets an `--output` flag for the same
+pass, since it has no verbs. The summary line ends with the reminder that a clean
+run is not proof of compliance.
 
 ## Semver
 
 - `@nera-static/validate`: `validateOutput`, the new rules, the `source` field and
   `config/validate.yaml` are all additive → **minor** (1.2.0). No engine change
   (the parser choice keeps Node ≥ 20).
-- `@nera-static/nera`: the new flags are additive → **minor**. It needs the new
+- `@nera-static/nera`: the `check` command and the `--check` flag are additive →
+  **minor**. It needs the new
   validate range.
 - No change to `@nera-static/core` or any plugin.
 
@@ -209,28 +214,39 @@ line ends with the reminder that a clean run is not proof of compliance.
    `public/`, assert findings).
 2. **Accessibility rules.** The `a11y-*` table.
 3. **Privacy and legal rules.** The `privacy-*` and `legal-*` tables.
-4. **CLI and docs.** `--output` / `--check` in `nera-cli` and the validate bin;
+4. **CLI and docs.** `nera check` and `nera build --check` in `nera-cli`,
+   `--output` in the validate bin; `nera build --check` in `nera-website`'s CI
+   workflow;
    both READMEs; the CLI docs page on nera.js.org in all three languages
    (`nera-website/pages/docs/cli.md`, `pages/de/docs/cli.md`,
    `pages/es/docs/cli.md`).
 5. **Field test** against `michael-becker-berlin.de` (acceptance criteria below),
    then release validate and nera.
 
+## Decisions (2026-10-09)
+
+The open questions of the first draft, settled with the maintainer:
+
+1. **Command surface: a separate verb.** `nera check` for the output,
+   `nera validate` stays sources-only, plus `nera build --check` for CI (see
+   "CLI"). Rejected: `nera validate --output`, which blurred what "validate"
+   means.
+2. **Collapsing: from two pages.** Any identical finding (`rule` + `message`) on
+   two or more files is reported once, with the count and example files.
+   Rejected: a percentage threshold (harder to explain) and no collapsing.
+3. **Language of parts: yes, opt-in.** `a11y-link-lang` checks the narrow,
+   reliable case — `hreflang` without a matching `lang`. Detecting foreign-language
+   text in general stays out of scope.
+4. **Messages stay English; the platform translates.** Nera Pro maps the stable
+   `rule` id to its own localized text. validate takes no locale, which keeps
+   the package free of translation upkeep.
+5. **`nera-website` runs `nera build --check` in CI, not in the pre-push hook.**
+   The hook stays `nera validate` so pushing stays fast; the CI workflow builds
+   anyway. Wire this up after the release (slice 4).
+
 ## Open questions
 
-1. **Command surface.** `nera validate --output` plus `nera build --check`, or a
-   separate `nera check`? The spec assumes the flags; a separate verb would make
-   "validate = sources" and "check = output" crisper.
-2. **Collapsing threshold.** Collapse at two or more identical findings, or only
-   above a percentage of pages? Two is simplest and matches "it is one template".
-3. **Language-of-parts.** `d2b7b2a` added `lang` to the language-switch link
-   (WCAG 3.1.2). Detecting text in a foreign language reliably is out of reach;
-   a narrow rule — a link with `hreflang` but no matching `lang` — is easy. Worth
-   adding as opt-in?
-4. **Platform messages.** Messages are English. Should the platform translate by
-   `rule` id, or should validate accept a locale?
-5. **Gate in `nera-website`.** Its pre-push hook runs `nera validate`. Add
-   `--output` there once released (needs a build in the hook — slower)?
+None at the moment.
 
 ## Acceptance criteria
 
