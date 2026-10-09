@@ -14,7 +14,7 @@ jobs:
             fail-fast: false
             matrix:
                 # Node 18 is deliberately absent: it reached EOL 2025-04-30 and
-                # the package declares `engines.node: >=20.0.0`, matching
+                # the package declares `engines.node: ^20.19.0 || >=22.0.0`, matching
                 # @nera-static/core.
                 node-version: [20, 22]
 

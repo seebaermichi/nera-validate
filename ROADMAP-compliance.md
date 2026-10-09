@@ -146,6 +146,12 @@ would be a breaking change for a package every site installs. htmlparser2's
 `withStartIndices` gives the offsets needed for line numbers. CSS is scanned
 with plain text matching (two heuristic rules only); no CSS parser.
 
+*2026-10-09:* the "only Node ≥ 20" premise no longer holds. Through
+`@nera-static/core` (markdown-it 15 → `entities@8`) the real floor was already
+Node 20.19, so validate 1.4.0 declares `^20.19.0 || >=22.0.0`, as core 4.14.0
+does. The htmlparser2 **^10** pin (slice notes below) is therefore no longer
+needed to protect the floor and can move to 11+ in a later release.
+
 ## Rule catalogue
 
 Rule ids are stable once released — the platform keys on them (and may

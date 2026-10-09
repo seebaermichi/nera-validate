@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-10-09
+
+### Changed
+
+-   **`engines.node` corrected from `>=20.0.0` to `^20.19.0 || >=22.0.0`**,
+    matching `@nera-static/core` 4.14.0. Through core, validate pulls in
+    `entities@8` (via markdown-it 15), which declares `>=20.19.0`, and
+    `rimraf`/`glob` already excluded Node 21; the old range claimed support
+    the dependency tree does not, and installing on an older Node 20 printed
+    `EBADENGINE` warnings. This documents the real floor rather than removing
+    working support; Node 20 itself reached end of life on 2026-04-30. If you
+    are below 20.19, upgrade Node (22 LTS recommended).
+
 ## [1.3.0] - 2026-10-09
 
 ### Added
