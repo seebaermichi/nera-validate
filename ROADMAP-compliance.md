@@ -3,9 +3,9 @@
 > **Status: spec, decisions settled 2026-10-09. Slice 1 (infrastructure +
 > `a11y-html-lang`), slice 2 (the rest of the `a11y-*` table), slice 3 (the
 > `privacy-*` and `legal-*` tables) and slice 4 (`nera check`, `nera build
-> --check`, `--output`, READMEs, CLI docs) implemented 2026-10-09, unreleased;
-> slice 4's nera-cli and nera-website commits are held locally until the
-> validate release (decision 8); slice 5 open.**
+> --check`, `--output`, READMEs, CLI docs) implemented 2026-10-09; slice 5
+> (field test, then release) done 2026-10-09 — validate 1.2.0, then nera with
+> `nera check`.**
 >
 > This document is the single source of truth for teaching `@nera-static/validate`
 > to check the **built HTML** of a Nera site for accessibility (WCAG / BITV /
@@ -355,6 +355,44 @@ run is not proof of compliance.
    nera-website push the held docs commit and add `nera build --check` to
    `.github/workflows/deploy.yml` (the step that runs `npm run build` today,
    decision 5).
+   **Field test done 2026-10-09**, with `nera-validate --output` (validate at
+   `f8324bd`) over three snapshots of `michael-becker-berlin.de`, each
+   exported with `git archive` into a scratch folder and built with the site's
+   own `npm run build` (assets + `nera build`, its installed packages):
+   - `d2b7b2a^` (before the accessibility fixes), defaults: five findings,
+     each collapsed — `a11y-skip-link` (32 pages), `a11y-heading-skip` h1→h3
+     (14 pages: the 2021 posts and the tag pages) and h2→h4 (the two Search
+     Console posts), `a11y-nav-name` (6 pages), `a11y-h1` (the home page in
+     both languages, the about-me stack's second `<h1>`). With the opt-ins:
+     `a11y-reduced-motion` once (the stylesheet's `scroll-behavior: smooth`),
+     `a11y-link-lang` on the language switch, and `a11y-target-blank` on 40
+     distinct external links.
+   - `dff457d^` (before the DDG update): the same plus `legal-outdated-law`
+     ("cites the TMG"), on the imprint in both languages, collapsed into one.
+   - `HEAD` (`ac73b2a`, the branch is `main`, not `master`): defaults and every
+     opt-in give one finding, `a11y-nav-name` on the four legal pages. No
+     `privacy-third-party`, no `privacy-storage`, and no `legal-outdated-law`
+     although the published cookie-banner post mentions the TTDSG.
+
+   Where the result differs from the acceptance criteria, and why:
+   - The criteria list `a11y-h1` for "about-me stack, tag pages" (the wording
+     of the fix commit). The tag pages have one `<h1>` and `<h3>` cards — the
+     fix was `h3` → `h2` — so they are `a11y-heading-skip`, which reports them.
+     Both fixes are found; only the rule differs.
+   - `a11y-target-blank` is not one finding per template: the site's
+     `config/link-attributes.yaml` made plugin-link-attributes put
+     `target="_blank"` on every external link in the content, so there is no
+     shared template element, and the message names each link (slice 2) — 40
+     different links, 40 findings, 2 pages each where a post exists in two
+     languages. Left as is: the rule is opt-in, and one config line behind
+     many links is something the output cannot see.
+   - The remaining `HEAD` finding is real: the imprint and privacy pages carry
+     a table of contents, `<nav class="toc">`, without `aria-label`, next to
+     the labelled footer nav "Rechtliches". The hand audit missed it. The fix
+     belongs to the site (an `aria-label` on the toc nav), not to validate.
+
+   No rule changed after the field test, so the ids and defaults released in
+   1.2.0 are the ones tested.
 
 ## Decisions (2026-10-09)
 
