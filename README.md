@@ -1,5 +1,8 @@
 # @nera-static/validate
 
+[![Test](https://github.com/seebaermichi/nera-validate/actions/workflows/test.yml/badge.svg)](https://github.com/seebaermichi/nera-validate/actions/workflows/test.yml)
+[![npm version](https://img.shields.io/npm/v/@nera-static/validate)](https://www.npmjs.com/package/@nera-static/validate)
+
 Validate a [Nera](https://github.com/seebaermichi/nera) site **the way the build
 sees it** — before you publish, and before Nera silently drops a page.
 
