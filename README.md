@@ -49,10 +49,15 @@ on what "valid" means.
 
 ```js
 { file: 'pages/index.md', line: 2, severity: 'error', rule: 'layout-unresolved',
-  message: 'layout "pages/missing.pug" not found in views or theme' }
+  message: 'layout "pages/missing.pug" not found in views or theme — looked for ' +
+    'theme/views/pages/missing.pug, ' +
+    'node_modules/@nera-static/theme-docs/views/pages/missing.pug; ' +
+    'create theme/views/pages/missing.pug, or fix `layout` to name an existing template' }
 ```
 
-`severity` is `'error'` or `'warning'`; `line` is 1-based or `null`.
+`severity` is `'error'` or `'warning'`; `line` is 1-based or `null`. Every
+`message` is one line: what is wrong, the offending value, and — after ` — `
+or a `; ` — what to do about it, so it is actionable without this README.
 
 ### Checks
 
