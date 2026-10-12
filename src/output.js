@@ -21,6 +21,9 @@ const LEVELS = ['error', 'warning', 'off']
 // How many example files a collapsed finding names in its message.
 const COLLAPSE_EXAMPLES = 3
 
+// The example path for each `legal.<kind>` in config-invalid messages.
+const LEGAL_EXAMPLE = { imprint: '/de/impressum.html', privacy: '/de/datenschutz.html' }
+
 // `legal.imprint` / `legal.privacy`: per language, the site path every page of
 // that language must link to. Keys are lower-cased to match `<html lang>`.
 function readLegalPaths(config, kind, file, findings) {
@@ -28,8 +31,8 @@ function readLegalPaths(config, kind, file, findings) {
     if (value == null) return {}
     if (!isMapping(value)) {
         findings.push(invalid(file,
-            `legal.${kind} must map languages to paths, such as ` +
-            '`de: /de/impressum.html`; ignoring it'))
+            `legal.${kind} must map languages to paths — write it as ` +
+            `\`${kind}: { de: ${LEGAL_EXAMPLE[kind]} }\`; ignoring it`))
         return {}
     }
     const paths = {}
@@ -37,7 +40,7 @@ function readLegalPaths(config, kind, file, findings) {
         if (typeof sitePath !== 'string' || !sitePath.startsWith('/')) {
             findings.push(invalid(file,
                 `legal.${kind}.${lang} is "${sitePath}" — use a site path ` +
-                'starting with `/`, such as /de/impressum.html; ignoring it'))
+                `starting with \`/\`, such as ${LEGAL_EXAMPLE[kind]}; ignoring it`))
             continue
         }
         paths[lang.toLowerCase()] = sitePath
@@ -52,7 +55,8 @@ function readAllowedHosts(config, file, findings) {
     if (value == null) return []
     if (!Array.isArray(value)) {
         findings.push(invalid(file,
-            'privacy.allowed_hosts must be a list of host names; ignoring it'))
+            'privacy.allowed_hosts must be a list of host names — write ' +
+            'it as `allowed_hosts: [cdn.example.org]`; ignoring it'))
         return []
     }
     return value.filter((host) => {
@@ -87,12 +91,15 @@ function loadConfig(cwd, configFolder, findings) {
 
     if (config.legal != null && !isMapping(config.legal)) {
         findings.push(invalid(file,
-            'legal must be a mapping with `imprint` and `privacy`; ignoring it'))
+            'legal must be a mapping with `imprint` and `privacy` — put ' +
+            '`imprint:` and `privacy:` under it, each mapping languages to ' +
+            'paths; ignoring it'))
         config.legal = {}
     }
     if (config.privacy != null && !isMapping(config.privacy)) {
         findings.push(invalid(file,
-            'privacy must be a mapping with `allowed_hosts`; ignoring it'))
+            'privacy must be a mapping with `allowed_hosts` — put ' +
+            '`allowed_hosts:` under it, a list of host names; ignoring it'))
         config.privacy = {}
     }
 

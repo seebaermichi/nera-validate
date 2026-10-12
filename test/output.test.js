@@ -842,7 +842,7 @@ describe('validateOutput', () => {
                 const results = validateOutput({ cwd })
                 const config = results.filter((r) => r.rule === 'config-invalid')
                 expect(config.map((r) => r.message.split(' — ')[0])).toEqual([
-                    'legal.imprint must map languages to paths, such as `de: /de/impressum.html`; ignoring it',
+                    'legal.imprint must map languages to paths',
                     'legal.privacy.de is "datenschutz.html"',
                     'privacy.allowed_hosts has "https://cdn.example.org"',
                 ])

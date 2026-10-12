@@ -134,7 +134,8 @@ const KNOWN_HOSTS = [
     {
         domains: ['google-analytics.com', 'googletagmanager.com'],
         what: 'Google Analytics / Tag Manager',
-        note: 'tracking that reads or stores data on the device needs consent (§ 25 TDDDG)',
+        note: 'tracking that reads or stores data on the device needs consent ' +
+            '(§ 25 TDDDG); load it only after the visitor agrees',
     },
     {
         domains: [
@@ -146,16 +147,21 @@ const KNOWN_HOSTS = [
     },
 ]
 
+// How to silence privacy-third-party for a host on purpose.
+const ALLOW_HOST =
+    'list the host under `privacy.allowed_hosts` in config/validate.yaml once ' +
+    'it is accounted for'
+
 function thirdPartyMessage(host) {
     const known = KNOWN_HOSTS.find((k) =>
         k.domains.some((d) => host === d || host.endsWith(`.${d}`)))
     if (known) {
         return `loads ${known.what} from ${host} — a third-party request that ` +
-            `sends the visitor's IP address; ${known.note}`
+            `sends the visitor's IP address; ${known.note}, or ${ALLOW_HOST}`
     }
     return `loads ${host} — a third-party request that sends the visitor's IP ` +
-        'address; list the host under `privacy.allowed_hosts` once it is ' +
-        'accounted for (Art. 6 DSGVO)'
+        'address; self-host the resource, or name the host in the privacy ' +
+        `policy and ${ALLOW_HOST} (Art. 6 DSGVO)`
 }
 
 // One hit per third-party host — the host is what receives the IP address —
@@ -192,7 +198,8 @@ function storageUse(code) {
 
 const storageNote =
     'storing or reading data on the visitor\'s device needs consent unless ' +
-    'it is strictly necessary; confirm that it is (§ 25 TDDDG)'
+    'it is strictly necessary; confirm that it is, or ask for consent ' +
+    'before the script runs (§ 25 TDDDG)'
 
 // An inline `<script>` that runs as JavaScript (not JSON-LD, an import map or
 // a template).
@@ -316,14 +323,17 @@ function legalLinkRule(kind) {
         if (!found || found.links.length > 0) return []
         const missing = found.configured
             ? `page has no link to ${name} (\`${found.configured}\`)`
-            : `page has no link whose text names ${name} ` +
-              `(${words.join(', ')}) — if it is linked under another name, ` +
-              `set \`legal.${kind}\` in config/validate.yaml`
+            : `page has no link whose text names ${name} (${words.join(', ')})`
+        const otherName = found.configured
+            ? ''
+            : `, or, if it is linked under another name, set \`legal.${kind}\` ` +
+              'in config/validate.yaml'
         return [{
             line: lineOf(bodyOf(document)),
             message:
                 `${missing} — it should be easy to find and directly ` +
-                `reachable from every page (${law})`,
+                'reachable from every page; link it from the layout, such as ' +
+                `in the footer${otherName} (${law})`,
         }]
     }
 }
@@ -334,17 +344,19 @@ const OUTDATED_LAWS = [
         re: /\bTMG\b|Telemediengesetz/,
         message:
             'cites the TMG (Telemediengesetz) — replaced by the DDG on ' +
-            '2024-05-14; the imprint duty is now § 5 DDG',
+            '2024-05-14; cite § 5 DDG for the imprint duty instead',
     },
     {
         re: /\bTTDSG\b|Telekommunikation-Telemedien-Datenschutz-Gesetz/,
         message:
-            'cites the TTDSG — renamed TDDDG on 2024-05-14; device storage is ' +
-            'now § 25 TDDDG',
+            'cites the TTDSG — renamed TDDDG on 2024-05-14; cite the TDDDG ' +
+            'instead (device storage is § 25 TDDDG)',
     },
     {
         re: /§\s*55\s*(?:Abs\.?\s*\d+\s*)?RStV/,
-        message: 'cites § 55 RStV — replaced by § 18 MStV on 2020-11-07',
+        message:
+            'cites § 55 RStV — replaced by § 18 MStV on 2020-11-07; cite ' +
+            '§ 18 MStV instead',
     },
 ]
 
@@ -377,7 +389,8 @@ export const OUTPUT_RULES = [
                     line: null,
                     message:
                         'page has no `<html>` element to carry a `lang` — ' +
-                        'screen readers cannot tell its language (WCAG 3.1.1)',
+                        'screen readers cannot tell its language; wrap the ' +
+                        'layout in `<html lang="…">` (WCAG 3.1.1)',
                 }]
             }
             if (html.attribs.lang?.trim()) return []
@@ -385,7 +398,8 @@ export const OUTPUT_RULES = [
                 line: lineOf(html),
                 message:
                     `\`<html>\` has ${'lang' in html.attribs ? 'an empty' : 'no'} ` +
-                    '`lang` — screen readers cannot tell the page language ' +
+                    '`lang` — screen readers cannot tell the page language; ' +
+                    'set it in the layout, such as `<html lang="de">` ' +
                     '(WCAG 3.1.1)',
             }]
         },
@@ -403,7 +417,9 @@ export const OUTPUT_RULES = [
                     : lineOf(findOne(named('head'), document.children) ?? bodyOf(document)),
                 message:
                     `page has ${title ? 'an empty' : 'no'} \`<title>\` — it names ` +
-                    'the page in tabs, history and screen readers (WCAG 2.4.2)',
+                    'the page in tabs, history and screen readers; give the ' +
+                    'layout\'s `<head>` a `<title>` with the page title ' +
+                    '(WCAG 2.4.2)',
             }]
         },
     },
@@ -418,14 +434,16 @@ export const OUTPUT_RULES = [
                     line: lineOf(bodyOf(document)),
                     message:
                         'page has no `<h1>` — screen-reader users jump to it ' +
-                        'to find the main heading (WCAG 1.3.1, best practice)',
+                        'to find the main heading; mark the main heading as ' +
+                        '`<h1>` (WCAG 1.3.1, best practice)',
                 }]
             }
             return [{
                 line: lineOf(h1s[1]),
                 message:
                     'page has more than one `<h1>` — one main heading per ' +
-                    'page keeps its outline clear (WCAG 1.3.1, best practice)',
+                    'page keeps its outline clear; keep one and make the ' +
+                    'others `<h2>` (WCAG 1.3.1, best practice)',
             }]
         },
     },
@@ -443,7 +461,9 @@ export const OUTPUT_RULES = [
                     line: lineOf(headings[i]),
                     message:
                         `heading level jumps from \`<h${from}>\` to \`<h${to}>\` — ` +
-                        'the outline suggests a missing section (WCAG 1.3.1)',
+                        'the outline suggests a missing section; use ' +
+                        `\`<h${from + 1}>\` here, or add the missing level ` +
+                        '(WCAG 1.3.1)',
                 })
             }
             return hits
@@ -502,7 +522,8 @@ export const OUTPUT_RULES = [
                     message:
                         `link ${describe(a, ['href'])} has no text, ` +
                         '`aria-label` or image `alt` — screen readers ' +
-                        'announce it without a name (WCAG 2.4.4, 4.1.2)',
+                        'announce it without a name; give it visible text ' +
+                        'or an `aria-label` (WCAG 2.4.4, 4.1.2)',
                 }))
         },
     },
@@ -519,14 +540,16 @@ export const OUTPUT_RULES = [
                     line: lineOf(bodyOf(document)),
                     message:
                         'page has no `<main>` — assistive technology uses it ' +
-                        'to jump to the content (WCAG 1.3.1)',
+                        'to jump to the content; wrap the page content in ' +
+                        'one `<main>` in the layout (WCAG 1.3.1)',
                 }]
             }
             return [{
                 line: lineOf(mains[1]),
                 message:
                     'page has more than one `<main>` — there should be one ' +
-                    'main landmark (WCAG 1.3.1)',
+                    'main landmark; keep one and make the others ' +
+                    '`<section>` or `<div>` (WCAG 1.3.1)',
             }]
         },
     },
@@ -543,7 +566,9 @@ export const OUTPUT_RULES = [
                     message:
                         'the first focusable element is not a skip link — ' +
                         'keyboard users must tab through everything before ' +
-                        'the content (WCAG 2.4.1)',
+                        'the content; start the layout\'s `<body>` with a ' +
+                        'link such as `<a href="#main">Skip to content</a>` ' +
+                        'to the `id` of its `<main>` (WCAG 2.4.1)',
                 }]
             }
             let id
@@ -557,7 +582,8 @@ export const OUTPUT_RULES = [
                 line: lineOf(first),
                 message:
                     `the skip link points to \`${href}\`, but no element has ` +
-                    `\`id="${id}"\` — it goes nowhere (WCAG 2.4.1)`,
+                    `\`id="${id}"\` — it goes nowhere; add \`id="${id}"\` to ` +
+                    'the main content, or fix the link (WCAG 2.4.1)',
             }]
         },
     },
@@ -574,7 +600,8 @@ export const OUTPUT_RULES = [
                     message:
                         'page has more than one `<nav>`, and this one has no ' +
                         '`aria-label` or `aria-labelledby` — screen readers ' +
-                        'cannot tell them apart (WCAG 1.3.1)',
+                        'cannot tell them apart; give it one, such as ' +
+                        '`aria-label="Main"` (WCAG 1.3.1)',
                 }))
         },
     },
@@ -596,7 +623,8 @@ export const OUTPUT_RULES = [
                         message:
                             `\`id="${id}"\` is used more than once on the page — ` +
                             'labels, skip links and ARIA references may hit ' +
-                            'the wrong element (WCAG 4.1.2)',
+                            'the wrong element; make each `id` unique ' +
+                            '(WCAG 4.1.2)',
                     })
                 }
             }
@@ -628,7 +656,9 @@ export const OUTPUT_RULES = [
                 line: lineOf(meta),
                 message:
                     `\`<meta name="viewport">\` sets ${blocked.map((b) => `\`${b}\``).join(' and ')} — ` +
-                    'visitors cannot zoom the page to 200% (WCAG 1.4.4)',
+                    'visitors cannot zoom the page to 200%; remove ' +
+                    `${blocked.map((b) => `\`${b}\``).join(' and ')} from its ` +
+                    '`content` (WCAG 1.4.4)',
             }]
         },
     },
@@ -655,7 +685,8 @@ export const OUTPUT_RULES = [
                 message:
                     `link ${describe(a, ['href'])} has \`hreflang="${attr(a, 'hreflang')}"\` ` +
                     'but no matching `lang` — screen readers read its text in ' +
-                    'the page language (WCAG 3.1.2)',
+                    `the page language; add \`lang="${attr(a, 'hreflang')}"\` ` +
+                    'to the link (WCAG 3.1.2)',
             }))
         },
     },
@@ -692,7 +723,9 @@ export const OUTPUT_RULES = [
                 message:
                     `stylesheet uses ${motion.map((m) => m.what).join(' and ')} ` +
                     'but has no `prefers-reduced-motion` query — visitors who ' +
-                    'turned motion off still get it (WCAG 2.3.3)',
+                    'turned motion off still get it; turn the motion off ' +
+                    'inside `@media (prefers-reduced-motion: reduce)` ' +
+                    '(WCAG 2.3.3)',
             }]
         },
     },
