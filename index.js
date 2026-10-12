@@ -57,30 +57,35 @@ function collectShadowFindings(model, cwd, findings) {
     }
 }
 
-// Resolve a page's `layout` to an existing pug file through the layered chain,
-// applying pug's `.pug` append for an extensionless value. Null if unresolved.
+// Resolve a page's `layout` to an existing file through the layered chain.
+// Null if unresolved. Unlike an include, an extensionless layout gets no `.pug`:
+// the build hands resolveEntry's path straight to `pug.compileFile`, which
+// fails on `pages/default` even when `pages/default.pug` exists.
 function resolveLayout(layout, roots) {
     const entry = resolveEntry(layout, roots)
-    if (fssync.existsSync(entry)) return entry
-    if (!path.extname(entry) && fssync.existsSync(`${entry}.pug`)) {
-        return `${entry}.pug`
-    }
-    return null
+    return fssync.existsSync(entry) ? entry : null
 }
 
 // `layout-unresolved`: the files resolveLayout looked for, site-relative — the
-// value under each view root (site views, then theme views), plus the `.pug`
-// form in the site's views for an extensionless value — and the one to create.
+// value under each view root (site views, then theme views) — and the fix: the
+// missing `.pug` extension for an extensionless value, else the site's copy to
+// create.
 function layoutUnresolvedMessage(layout, model, cwd) {
-    const looked = model.roots.map((root) => path.join(root, layout))
-    const own = path.extname(layout) ? looked[0] : `${looked[0]}.pug`
-    if (own !== looked[0]) looked.push(own)
+    // A Set: a theme whose views are the site's own would list a path twice.
+    const looked = [...new Set(model.roots.map((root) => path.join(root, layout)))]
     const shown = looked.map((abs) => rel(cwd, abs))
-    const create = shown.length > 1 ? rel(cwd, own) : 'it'
-    return `layout "${layout}" not found in views${
+    const what = `layout "${layout}" not found in views${
         model.theme ? ' or theme' : ''
-    } — looked for ${shown.join(', ')}; create ${create}, or fix ` +
-        '`layout` to name an existing template'
+    } — looked for ${shown.join(', ')}`
+    if (!path.extname(layout)) {
+        const exists = looked.some((abs) => fssync.existsSync(`${abs}.pug`))
+        return `${what}; add the extension, \`layout: ${layout}.pug\`, since ` +
+            'the build does not append `.pug` to a layout' +
+            (exists ? '' : `, and create ${shown[0]}.pug`)
+    }
+    const create = shown.length > 1 ? shown[0] : 'it'
+    return `${what}; create ${create}, or fix \`layout\` to name an existing ` +
+        'template'
 }
 
 // Where a site's templates live, for messages: `theme/views`, plus the theme's

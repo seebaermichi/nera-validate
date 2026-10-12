@@ -457,12 +457,43 @@ describe('validateSite', () => {
             )
 
             await addTheme()
-            await write('pages/index.md', '---\nlayout: pages/missing\n---\n')
+            await write('pages/index.md', '---\nlayout: pages/missing.pug\n---\n')
             const themed = validateSite({ cwd }).find((r) => r.rule === 'layout-unresolved')
             expect(themed.message).toContain('not found in views or theme')
             expect(themed.message).toContain(
-                'looked for theme/views/pages/missing, my-theme/views/pages/missing, ' +
-                'theme/views/pages/missing.pug; create theme/views/pages/missing.pug'
+                'looked for theme/views/pages/missing.pug, my-theme/views/pages/missing.pug; ' +
+                'create theme/views/pages/missing.pug'
+            )
+        })
+
+        // The build hands the layout path to pug.compileFile as is, which fails
+        // on `pages/default` even when `pages/default.pug` exists.
+        it('an extensionless layout is unresolved, with the extension as the fix', async () => {
+            await buildValidSite()
+            await write('pages/index.md', '---\nlayout: pages/default\n---\n')
+            const existing = validateSite({ cwd }).find((r) => r.rule === 'layout-unresolved')
+            expect(existing.message).toContain(
+                'looked for theme/views/pages/default; add the extension, ' +
+                '`layout: pages/default.pug`, since the build does not append `.pug` to a layout'
+            )
+            expect(existing.message).not.toContain('and create')
+
+            await write('pages/index.md', '---\nlayout: pages/missing\n---\n')
+            const missing = validateSite({ cwd }).find((r) => r.rule === 'layout-unresolved')
+            expect(missing.message).toContain(', and create theme/views/pages/missing.pug')
+        })
+
+        it('a theme whose views are the site\'s own lists each file once', async () => {
+            await buildValidSite()
+            await write('config/app.yaml', 'name: Test\ntheme: ./theme\n')
+            await write('pages/other.md', '---\nlayout: pages/missing.pug\n---\n')
+            await write('theme/views/layouts/layout.pug', 'html\n  head\n    include ../partials/missing.pug\n')
+            const results = validateSite({ cwd })
+            expect(results.find((r) => r.rule === 'layout-unresolved').message).toContain(
+                'looked for theme/views/pages/missing.pug; create it'
+            )
+            expect(results.find((r) => r.rule === 'include-unresolved').message).toContain(
+                'looked for theme/views/partials/missing.pug; create it'
             )
         })
 
@@ -480,10 +511,20 @@ describe('validateSite', () => {
             const themed = validateSite({ cwd }).find((r) => r.rule === 'include-unresolved')
             expect(themed.message).toContain('does not resolve')
             expect(themed.message).toContain(
-                'looked for theme/views/partials/missing, my-theme/views/partials/missing, ' +
-                'theme/views/partials/missing.pug; create theme/views/partials/missing.pug'
+                'looked for theme/views/partials/missing.pug, my-theme/views/partials/missing.pug; ' +
+                'create theme/views/partials/missing.pug'
             )
             expect(themed.message).toContain('a leading `/` starts at theme/views')
+        })
+
+        // Pug appends `.pug` to an extensionless include before resolving, so
+        // a partial only the theme has resolves through the layered chain.
+        it('an extensionless include found only in the theme resolves', async () => {
+            await buildValidSite()
+            await addTheme()
+            await write('my-theme/views/partials/nav.pug', 'nav\n')
+            await write('theme/views/layouts/layout.pug', 'html\n  head\n    include ../partials/nav\n')
+            expect(validateSite({ cwd }).filter((r) => r.rule === 'include-unresolved')).toEqual([])
         })
 
         it('config-invalid for ignore shows the correct form', async () => {

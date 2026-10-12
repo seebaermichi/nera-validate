@@ -4,40 +4,41 @@ import { makeLayeredResolver } from '@nera-static/core'
 
 const rel = (cwd, abs) => path.relative(cwd, abs).split(path.sep).join('/')
 
-// Resolve a pug `include`/`extends` target the way the build does: through the
-// layered resolver (site view root then theme), then — because pug appends
-// `.pug` to an extensionless target — try the `.pug` form. A filtered or
-// already-extensioned target (`include:markdown-it x.md`) is checked as written.
-// Returns the resolved absolute path, or null if nothing exists.
+// Pug appends `.pug` to every extensionless include/extends path (a filtered
+// one too) before it calls the resolver, so the build never looks for the bare
+// form. Mirrors `pug/lib/index.js` (the `parse` step of its own plugin).
+const withPugExtension = (target) =>
+    path.extname(target) ? target : `${target}.pug`
+
+// Where the layered resolver (site view root, then theme) puts `rawTarget`: the
+// first existing file, or the site's own path when none exists.
+const layered = (rawTarget, sourceFile, roots) =>
+    makeLayeredResolver(roots)(
+        withPugExtension(rawTarget), sourceFile, { basedir: roots[0] }
+    )
+
+// Resolve a pug `include`/`extends` target the way the build does. Returns the
+// resolved absolute path, or null if nothing exists.
 export function resolveTarget(rawTarget, sourceFile, roots) {
-    const resolver = makeLayeredResolver(roots)
-    const resolved = resolver(rawTarget, sourceFile, { basedir: roots[0] })
-    const candidates = path.extname(resolved)
-        ? [resolved]
-        : [resolved, `${resolved}.pug`]
-    return candidates.find((p) => fssync.existsSync(p)) || null
+    const resolved = layered(rawTarget, sourceFile, roots)
+    return fssync.existsSync(resolved) ? resolved : null
 }
 
 // `include-unresolved`: the files resolveTarget looked for, for the message
 // only — the verdict is resolveTarget's. The layered resolver tries the
-// target's path below each view root (site views first, then the theme's); for
-// an extensionless target, resolveTarget then tries the `.pug` form of what it
-// returned. That last file (or, for a target with an extension, the site's
-// copy) is the one to create.
+// target's path below each view root (site views first, then the theme's); the
+// site's copy is the one to create.
 function unresolvedMessage(rawTarget, sourceFile, roots, cwd) {
-    const resolved = makeLayeredResolver(roots)(
-        rawTarget, sourceFile, { basedir: roots[0] }
-    )
+    const resolved = layered(rawTarget, sourceFile, roots)
     const root = roots.find((r) => {
         const inside = path.relative(r, resolved)
         return !inside.startsWith('..') && !path.isAbsolute(inside)
     })
+    // A Set: a theme whose views are the site's own would list a path twice.
     const looked = root
-        ? roots.map((r) => path.join(r, path.relative(root, resolved)))
+        ? [...new Set(roots.map((r) => path.join(r, path.relative(root, resolved))))]
         : [resolved]
-    const own = path.extname(resolved) ? looked[0] : `${resolved}.pug`
-    if (own !== looked[0]) looked.push(own)
-    const create = looked.length > 1 ? rel(cwd, own) : 'it'
+    const create = looked.length > 1 ? rel(cwd, looked[0]) : 'it'
     return `include/extends target "${rawTarget}" does not resolve — looked ` +
         `for ${looked.map((abs) => rel(cwd, abs)).join(', ')}; create ` +
         `${create}, or fix the path (relative to this file; a leading \`/\` ` +
