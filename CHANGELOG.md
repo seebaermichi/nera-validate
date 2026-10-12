@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-10-12
+
+### Changed
+
+-   Every message now says what is wrong, where, and what to do, so a
+    finding read on its own (`nera validate --json`, `nera check --json`) is
+    actionable. `layout-missing` names an example `layout:` and the `ignore`
+    entry; `layout-unresolved` and `include-unresolved` list the files looked
+    for and the one to create; `yaml-parse` keeps only the parser's first line
+    and names the usual fix (frontmatter positions are now file lines);
+    `theme-unresolved` and `config-invalid` say how to fix the value; the
+    output rules (`a11y-*`, `privacy-*`, `legal-*`) end with a short fix.
+    Messages keep their opening words; rule ids, severities, levels, `file`
+    and `line` are unchanged.
+
+### Fixed
+
+-   An extensionless `include`/`extends` target that only the theme has
+    (`include ../partials/nav`) is no longer reported as `include-unresolved`:
+    like Pug, validate now appends `.pug` before resolving it.
+-   An extensionless `layout` (`layout: pages/default`) is now reported as
+    `layout-unresolved`, with the missing `.pug` as the fix. The build passes
+    the value to Pug as is and fails on it even when `pages/default.pug`
+    exists; validate used to accept it.
+
 ## [1.4.1] - 2026-10-11
 
 ### Changed
