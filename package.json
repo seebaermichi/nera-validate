@@ -47,8 +47,8 @@
     },
     "dependencies": {
         "@nera-static/core": "^4.9.0",
-        "domutils": "^3.2.2",
-        "htmlparser2": "^10.1.0",
+        "domutils": "^4.0.2",
+        "htmlparser2": "^12.0.0",
         "yaml": "^2.4.1"
     },
     "devDependencies": {
