@@ -7,7 +7,12 @@ import { collectIncludeFindings } from './src/pug-refs.js'
 import { formatResults, formatOutputResults, OUTPUT_NOTE } from './src/format.js'
 import { walkFiles } from './src/walk.js'
 import { validateOutput } from './src/output.js'
-import { readValidateYaml, readIgnore, isIgnored } from './src/config.js'
+import {
+    readValidateYaml,
+    readIgnore,
+    isIgnored,
+    yamlParseMessage,
+} from './src/config.js'
 
 export { formatResults, formatOutputResults, OUTPUT_NOTE, validateOutput }
 
@@ -63,6 +68,36 @@ function resolveLayout(layout, roots) {
     return null
 }
 
+// `layout-unresolved`: the files resolveLayout looked for, site-relative — the
+// value under each view root (site views, then theme views), plus the `.pug`
+// form in the site's views for an extensionless value — and the one to create.
+function layoutUnresolvedMessage(layout, model, cwd) {
+    const looked = model.roots.map((root) => path.join(root, layout))
+    const own = path.extname(layout) ? looked[0] : `${looked[0]}.pug`
+    if (own !== looked[0]) looked.push(own)
+    const shown = looked.map((abs) => rel(cwd, abs))
+    const create = shown.length > 1 ? rel(cwd, own) : 'it'
+    return `layout "${layout}" not found in views${
+        model.theme ? ' or theme' : ''
+    } — looked for ${shown.join(', ')}; create ${create}, or fix ` +
+        '`layout` to name an existing template'
+}
+
+// Where a site's templates live, for messages: `theme/views`, plus the theme's
+// views folder when a theme is configured.
+const viewsText = (model, cwd) =>
+    model.roots.map((root) => rel(cwd, root)).join(' or ')
+
+// The layout most pages use (the first one seen on a tie), as the example in
+// `layout-missing`. Null when no page has a layout that resolves.
+function mostUsed(counts) {
+    let best = null
+    for (const [layout, n] of counts) {
+        if (best === null || n > counts.get(best)) best = layout
+    }
+    return best
+}
+
 /**
  * Validate a Nera site the way the build will see it. Pure and read-only — it
  * renders nothing and writes nothing. The Nera CLI (`nera validate`) and the
@@ -99,7 +134,9 @@ export function validateSite({ cwd = process.cwd() } = {}) {
             line: null,
             severity: 'error',
             rule: 'yaml-parse',
-            message: `config could not be parsed: ${model.appConfigError}`,
+            message: yamlParseMessage(
+                'config could not be parsed', model.appConfigError
+            ),
         })
     }
 
@@ -109,14 +146,30 @@ export function validateSite({ cwd = process.cwd() } = {}) {
             line: null,
             severity: 'error',
             rule: 'theme-unresolved',
-            message: model.themeError,
+            // Core's "views does not exist" text has no fix of its own; the
+            // others ("Run: npm install …", "Update the generator …") do.
+            message: / does not exist$/.test(model.themeError)
+                ? `${model.themeError} — fix \`theme:\` in ${appYaml} (or ` +
+                  'NERA_THEME) to name a theme folder that has a `views/` ' +
+                  'folder, or remove it to build without a theme'
+                : model.themeError,
         })
     }
 
     collectShadowFindings(model, cwd, findings)
 
+    const configFindings = []
+    const { config, file } = readValidateYaml(
+        cwd, model.folders.config, configFindings
+    )
+
     const pagesDir = path.resolve(cwd, model.folders.pages)
     const visitedPug = new Set()
+    // Layout values of the pages whose layout resolves, with their page count,
+    // and the pages without one: their message names the most-used layout as
+    // the example, so it is written once every page has been read.
+    const layoutCounts = new Map()
+    const noLayout = []
 
     for (const abs of walkFiles(pagesDir, '.md')) {
         const raw = fssync.readFileSync(abs, 'utf-8')
@@ -133,21 +186,24 @@ export function validateSite({ cwd = process.cwd() } = {}) {
                     line: fm.startLine + errLine - 1,
                     severity: 'error',
                     rule: 'yaml-parse',
-                    message: `frontmatter YAML: ${err.message.split('\n')[0]}`,
+                    message: yamlParseMessage(
+                        'frontmatter YAML', err.message, fm.startLine - 1
+                    ),
                 })
                 continue
             }
         }
 
         if (!meta.layout) {
-            findings.push({
+            const finding = {
                 file: rel(cwd, abs),
                 line: null,
                 severity: 'warning',
                 rule: 'layout-missing',
-                message:
-                    'page has no `layout` — the build skips it silently',
-            })
+                message: '',
+            }
+            findings.push(finding)
+            noLayout.push(finding)
             continue
         }
 
@@ -158,20 +214,27 @@ export function validateSite({ cwd = process.cwd() } = {}) {
                 line: frontmatterKeyLine(raw, 'layout'),
                 severity: 'error',
                 rule: 'layout-unresolved',
-                message: `layout "${meta.layout}" not found in views${
-                    model.theme ? ' or theme' : ''
-                }`,
+                message: layoutUnresolvedMessage(String(meta.layout), model, cwd),
             })
             continue
         }
 
+        const value = String(meta.layout)
+        layoutCounts.set(value, (layoutCounts.get(value) ?? 0) + 1)
+
         collectIncludeFindings(entry, model.roots, cwd, visitedPug, findings)
     }
 
-    const configFindings = []
-    const { config, file } = readValidateYaml(
-        cwd, model.folders.config, configFindings
-    )
+    const example = mostUsed(layoutCounts)
+    for (const finding of noLayout) {
+        finding.message =
+            'page has no `layout` — the build skips it silently; add ' +
+            (example ? `\`layout: ${example}\`` : 'a `layout:` key') +
+            ` to its frontmatter (a template in ${viewsText(model, cwd)}), ` +
+            'or, if it has none on purpose (a fragment or draft), add ' +
+            `\`ignore: { layout-missing: [${finding.file}] }\` to ${file}`
+    }
+
     const ignore = readIgnore(config, file, configFindings)
     return [
         ...configFindings,

@@ -17,6 +17,20 @@ export const invalid = (file, message) => ({
 export const isMapping = (v) =>
     v != null && typeof v === 'object' && !Array.isArray(v)
 
+// A `yaml-parse` message: what the parser says and how to fix it. Only the
+// parser's first line is kept (the rest is a code frame), without its trailing
+// `:`. `lineOffset` moves the parser's `at line N` to the file line when the
+// YAML does not start the file (frontmatter). The parser names the spot, rarely
+// the cause, so the fix names the usual causes.
+export function yamlParseMessage(prefix, errorText, lineOffset = 0) {
+    const first = String(errorText).split('\n')[0]
+        .replace(/:\s*$/, '')
+        .replace(/\bat line (\d+)/, (_, n) => `at line ${Number(n) + lineOffset}`)
+    return `${prefix}: ${first} — fix the YAML at that line: quote a value ` +
+        'that contains `: ` or ` #` or starts with `[`, `{`, `*`, `&` or `@`, ' +
+        'and close any open bracket or quote'
+}
+
 // Read config/validate.yaml, shared by validateSite and validateOutput. Returns
 // `{ config, file }` — `config` is `{}` when the file is missing, and also when
 // it does not parse, which is reported as a `yaml-parse` finding.
@@ -33,7 +47,7 @@ export function readValidateYaml(cwd, configFolder, findings) {
             line: err.linePos?.[0]?.line ?? null,
             severity: 'error',
             rule: 'yaml-parse',
-            message: `config could not be parsed: ${err.message.split('\n')[0]}`,
+            message: yamlParseMessage('config could not be parsed', err.message),
         })
         return { config: {}, file }
     }
@@ -50,14 +64,15 @@ export function readIgnore(config, file, findings) {
     if (value == null) return ignore
     if (!isMapping(value)) {
         findings.push(invalid(file,
-            'ignore must map rule ids to lists of paths, such as ' +
-            '`layout-missing: [pages/drafts]`; ignoring it'))
+            'ignore must map rule ids to lists of paths — write it as ' +
+            '`ignore: { layout-missing: [pages/drafts] }`; ignoring it'))
         return ignore
     }
     for (const [id, paths] of Object.entries(value)) {
         if (!Array.isArray(paths)) {
             findings.push(invalid(file,
-                `ignore.${id} must be a list of paths; ignoring it`))
+                `ignore.${id} must be a list of paths — write it as ` +
+                `\`${id}: [pages/drafts]\`; ignoring it`))
             continue
         }
         const patterns = []

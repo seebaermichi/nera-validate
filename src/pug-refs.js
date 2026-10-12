@@ -18,6 +18,32 @@ export function resolveTarget(rawTarget, sourceFile, roots) {
     return candidates.find((p) => fssync.existsSync(p)) || null
 }
 
+// `include-unresolved`: the files resolveTarget looked for, for the message
+// only — the verdict is resolveTarget's. The layered resolver tries the
+// target's path below each view root (site views first, then the theme's); for
+// an extensionless target, resolveTarget then tries the `.pug` form of what it
+// returned. That last file (or, for a target with an extension, the site's
+// copy) is the one to create.
+function unresolvedMessage(rawTarget, sourceFile, roots, cwd) {
+    const resolved = makeLayeredResolver(roots)(
+        rawTarget, sourceFile, { basedir: roots[0] }
+    )
+    const root = roots.find((r) => {
+        const inside = path.relative(r, resolved)
+        return !inside.startsWith('..') && !path.isAbsolute(inside)
+    })
+    const looked = root
+        ? roots.map((r) => path.join(r, path.relative(root, resolved)))
+        : [resolved]
+    const own = path.extname(resolved) ? looked[0] : `${resolved}.pug`
+    if (own !== looked[0]) looked.push(own)
+    const create = looked.length > 1 ? rel(cwd, own) : 'it'
+    return `include/extends target "${rawTarget}" does not resolve — looked ` +
+        `for ${looked.map((abs) => rel(cwd, abs)).join(', ')}; create ` +
+        `${create}, or fix the path (relative to this file; a leading \`/\` ` +
+        `starts at ${rel(cwd, roots[0])})`
+}
+
 // Matches `include foo`, `include:filter foo`, and `extends foo`, capturing the
 // target path. Pug directives sit at the start of a (possibly indented) line.
 const INCLUDE_RE = /^\s*(?:include(?::[^\s]+)?|extends)\s+(.+?)\s*$/
@@ -49,7 +75,7 @@ export function collectIncludeFindings(entryFile, roots, cwd, visited, findings)
                 line: i + 1,
                 severity: 'error',
                 rule: 'include-unresolved',
-                message: `include/extends target "${target}" does not resolve`,
+                message: unresolvedMessage(target, entryFile, roots, cwd),
             })
             return
         }
