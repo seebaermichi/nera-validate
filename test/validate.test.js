@@ -332,4 +332,171 @@ describe('validateSite', () => {
             expect(hasErrors(results)).toBe(true)
         })
     })
+
+    describe('messages', () => {
+        // Every source-pass message says what to do: right after the ` — `
+        // that ends the "what", or after a later `; `, an imperative from this
+        // list starts the fix. A bare "x is wrong" message fails this.
+        const FIX = / — (?:.*?; )?(?:add|create|fix|quote|delete|remove|use|write|put|list|set|run|install|update)\b/
+
+        const write = async (rel, content) => {
+            const abs = path.join(cwd, rel)
+            await fs.mkdir(path.dirname(abs), { recursive: true })
+            await fs.writeFile(abs, content)
+        }
+
+        const THEMED = 'name: Test\ntheme: ./my-theme\n'
+        async function addTheme() {
+            await write('config/app.yaml', THEMED)
+            await write('my-theme/views/layouts/layout.pug', 'html\n  body\n    block content\n')
+        }
+
+        // One case per finding the source pass can produce: the files to
+        // write over a valid site, and the rule and file it must report.
+        const CASES = [
+            ['yaml-parse in config/app.yaml', 'yaml-parse', 'config/app.yaml',
+                { 'config/app.yaml': 'name: [unterminated\n' }],
+            ['yaml-parse in frontmatter', 'yaml-parse', 'pages/bad.md',
+                { 'pages/bad.md': '---\nlayout: pages/default.pug\ntitle: Note: read me\n---\n' }],
+            ['yaml-parse in config/validate.yaml', 'yaml-parse', 'config/validate.yaml',
+                { 'config/validate.yaml': 'ignore: [unclosed\n' }],
+            ['theme-unresolved', 'theme-unresolved', 'config/app.yaml',
+                { 'config/app.yaml': 'name: Test\ntheme: ./missing-theme\n' }],
+            ['layout-missing', 'layout-missing', 'pages/draft.md',
+                { 'pages/draft.md': '---\ntitle: Draft\n---\n' }],
+            ['layout-unresolved', 'layout-unresolved', 'pages/index.md',
+                { 'pages/index.md': '---\nlayout: pages/missing.pug\n---\n' }],
+            ['include-unresolved', 'include-unresolved', 'theme/views/layouts/layout.pug',
+                { 'theme/views/layouts/layout.pug': 'html\n  head\n    include ../partials/missing\n' }],
+            ['theme-shadowed', 'theme-shadowed', 'theme/views/layouts/layout.pug', {
+                'config/app.yaml': THEMED,
+                'my-theme/views/layouts/layout.pug': 'html\n  body\n    block content\n',
+                'theme/views/layouts/layout.pug': '//- nera:scaffold-default\nhtml\n  body\n    block content\n',
+            }],
+            ['config-invalid: ignore not a mapping', 'config-invalid', 'config/validate.yaml',
+                { 'config/validate.yaml': 'ignore: [pages]\n' }],
+            ['config-invalid: ignore.<id> not a list', 'config-invalid', 'config/validate.yaml',
+                { 'config/validate.yaml': 'ignore:\n  layout-missing: pages\n' }],
+            ['config-invalid: unusable path', 'config-invalid', 'config/validate.yaml',
+                { 'config/validate.yaml': 'ignore:\n  layout-missing: [/pages]\n' }],
+        ]
+
+        it.each(CASES)('%s says what to do, on one line', async (_, rule, file, files) => {
+            await buildValidSite()
+            for (const [rel, content] of Object.entries(files)) {
+                await write(rel, content)
+            }
+            const finding = validateSite({ cwd })
+                .find((r) => r.rule === rule && r.file === file)
+            expect(finding).toBeDefined()
+            expect(finding.message).toMatch(FIX)
+            expect(finding.message).not.toContain('\n')
+            expect(finding.message).toMatch(/^[a-z`]/)
+            expect(finding.message).not.toMatch(/\.$/)
+        })
+
+        it('yaml-parse keeps the parser\'s first line and names the usual fix', async () => {
+            await buildValidSite()
+            await write('config/app.yaml', 'name: [unterminated\n')
+            const finding = validateSite({ cwd }).find((r) => r.rule === 'yaml-parse')
+            expect(finding.message).toContain('config could not be parsed: ')
+            expect(finding.message).toContain('at line 2, column 1 — fix the YAML at that line')
+            expect(finding.message).toContain('quote a value that contains `: `')
+        })
+
+        it('yaml-parse in frontmatter names the file line, not the YAML line', async () => {
+            await buildValidSite()
+            await write('pages/bad.md', '---\nlayout: pages/default.pug\ntitle: Note: read me\n---\n')
+            const finding = validateSite({ cwd }).find((r) => r.rule === 'yaml-parse')
+            expect(finding.line).toBe(3)
+            expect(finding.message).toContain('frontmatter YAML: ')
+            expect(finding.message).toContain('at line 3,')
+            expect(finding.message).toContain('fix the YAML at that line')
+        })
+
+        it('theme-unresolved adds a fix only where core\'s text has none', async () => {
+            await buildValidSite()
+            await write('config/app.yaml', 'name: Test\ntheme: ./missing-theme\n')
+            const local = validateSite({ cwd }).find((r) => r.rule === 'theme-unresolved')
+            expect(local.message).toContain('does not exist — fix `theme:` in config/app.yaml')
+
+            await write('config/app.yaml', 'name: Test\ntheme: no-such-theme-xyz\n')
+            const pkg = validateSite({ cwd }).find((r) => r.rule === 'theme-unresolved')
+            expect(pkg.message).toContain('npm install @nera-static/theme-no-such-theme-xyz')
+            expect(pkg.message).not.toContain('fix `theme:`')
+        })
+
+        it('layout-missing names the most-used layout and the ignore entry', async () => {
+            await buildValidSite()
+            await write('pages/draft.md', '---\ntitle: Draft\n---\n')
+            const finding = validateSite({ cwd }).find((r) => r.rule === 'layout-missing')
+            expect(finding.message).toContain('the build skips it silently')
+            expect(finding.message).toContain('add `layout: pages/default.pug` to its frontmatter')
+            expect(finding.message).toContain('(a template in theme/views)')
+            expect(finding.message).toContain(
+                '`ignore: { layout-missing: [pages/draft.md] }` to config/validate.yaml'
+            )
+        })
+
+        it('layout-missing without any working layout gives no example', async () => {
+            await buildValidSite()
+            await write('pages/index.md', '---\ntitle: Home\n---\n')
+            await addTheme()
+            const finding = validateSite({ cwd }).find((r) => r.rule === 'layout-missing')
+            expect(finding.message).toContain('add a `layout:` key to its frontmatter')
+            expect(finding.message).toContain('(a template in theme/views or my-theme/views)')
+        })
+
+        it('layout-unresolved lists the files looked for and the one to create', async () => {
+            await buildValidSite()
+            await write('pages/index.md', '---\nlayout: pages/missing.pug\n---\n')
+            const plain = validateSite({ cwd }).find((r) => r.rule === 'layout-unresolved')
+            expect(plain.message).toContain(
+                'layout "pages/missing.pug" not found in views — looked for ' +
+                'theme/views/pages/missing.pug; create it, or fix `layout`'
+            )
+
+            await addTheme()
+            await write('pages/index.md', '---\nlayout: pages/missing\n---\n')
+            const themed = validateSite({ cwd }).find((r) => r.rule === 'layout-unresolved')
+            expect(themed.message).toContain('not found in views or theme')
+            expect(themed.message).toContain(
+                'looked for theme/views/pages/missing, my-theme/views/pages/missing, ' +
+                'theme/views/pages/missing.pug; create theme/views/pages/missing.pug'
+            )
+        })
+
+        it('include-unresolved lists the files looked for and the one to create', async () => {
+            await buildValidSite()
+            await write('theme/views/layouts/layout.pug', 'html\n  head\n    include ../partials/missing.pug\n')
+            const plain = validateSite({ cwd }).find((r) => r.rule === 'include-unresolved')
+            expect(plain.message).toContain(
+                'include/extends target "../partials/missing.pug" does not resolve — ' +
+                'looked for theme/views/partials/missing.pug; create it, or fix the path'
+            )
+
+            await addTheme()
+            await write('theme/views/layouts/layout.pug', 'html\n  head\n    include ../partials/missing\n')
+            const themed = validateSite({ cwd }).find((r) => r.rule === 'include-unresolved')
+            expect(themed.message).toContain('does not resolve')
+            expect(themed.message).toContain(
+                'looked for theme/views/partials/missing, my-theme/views/partials/missing, ' +
+                'theme/views/partials/missing.pug; create theme/views/partials/missing.pug'
+            )
+            expect(themed.message).toContain('a leading `/` starts at theme/views')
+        })
+
+        it('config-invalid for ignore shows the correct form', async () => {
+            await buildValidSite()
+            await write('config/validate.yaml', 'ignore: [pages]\n')
+            const [notMap] = validateSite({ cwd }).filter((r) => r.rule === 'config-invalid')
+            expect(notMap.message).toContain(
+                'write it as `ignore: { layout-missing: [pages/drafts] }`'
+            )
+
+            await write('config/validate.yaml', 'ignore:\n  a11y-h1: public/tags\n')
+            const [notList] = validateSite({ cwd }).filter((r) => r.rule === 'config-invalid')
+            expect(notList.message).toContain('write it as `a11y-h1: [pages/drafts]`')
+        })
+    })
 })

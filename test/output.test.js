@@ -1053,6 +1053,123 @@ describe('validateOutput', () => {
         expect(out).toContain('No problems found.')
         expect(out.trimEnd().endsWith(OUTPUT_NOTE)).toBe(true)
     })
+
+    describe('messages say what to do', () => {
+        // A body that is clean for the page rules, so each case adds one problem.
+        const clean = '<a href="#main">Skip</a>'
+        const optIn = (...ids) =>
+            `rules:\n${ids.map((id) => `  ${id}: warning`).join('\n')}\n`
+        const legalPage = doc({
+            body: [clean, '<main id="main"><h1>I</h1>', '<p>§ 5 TMG</p>',
+                '<p>TTDSG</p>', '<p>§ 55 RStV</p>', '</main>'],
+        })
+
+        // [name, rule, files over buildSite (public/index.html unless named),
+        //  phrase the fix must contain]
+        const CASES = [
+            ['a11y-html-lang without <html>', 'a11y-html-lang',
+                { 'public/index.html': '<p>x</p>' }, 'wrap the layout in `<html lang="…">`'],
+            ['a11y-html-lang without lang', 'a11y-html-lang',
+                { 'public/index.html': page('') }, 'set it in the layout, such as `<html lang="de">`'],
+            ['a11y-title', 'a11y-title',
+                { 'public/index.html': doc({ head: [], body: [clean, '<main id="main"><h1>a</h1></main>'] }) },
+                'give the layout\'s `<head>` a `<title>`'],
+            ['a11y-h1, none', 'a11y-h1',
+                { 'public/index.html': doc({ body: [clean, '<main id="main"></main>'] }) },
+                'mark the main heading as `<h1>`'],
+            ['a11y-h1, two', 'a11y-h1',
+                { 'public/index.html': doc({ body: [clean, '<main id="main"><h1>a</h1><h1>b</h1></main>'] }) },
+                'keep one and make the others `<h2>`'],
+            ['a11y-heading-skip', 'a11y-heading-skip',
+                { 'public/index.html': doc({ body: [clean, '<main id="main"><h1>a</h1><h3>b</h3></main>'] }) },
+                'use `<h2>` here, or add the missing level'],
+            ['a11y-link-name', 'a11y-link-name',
+                { 'public/index.html': doc({ body: [clean, '<main id="main"><h1>a</h1><a href="/x"></a></main>'] }) },
+                'give it visible text or an `aria-label`'],
+            ['a11y-main, none', 'a11y-main',
+                { 'public/index.html': doc({ body: [clean, '<div id="main"><h1>a</h1></div>'] }) },
+                'wrap the page content in one `<main>` in the layout'],
+            ['a11y-main, two', 'a11y-main',
+                { 'public/index.html': doc({ body: [clean, '<main id="main"><h1>a</h1></main><main></main>'] }) },
+                'make the others `<section>` or `<div>`'],
+            ['a11y-skip-link, missing', 'a11y-skip-link',
+                { 'public/index.html': doc({ body: ['<main id="main"><h1>a</h1></main>'] }) },
+                'start the layout\'s `<body>` with a link such as `<a href="#main">Skip to content</a>`'],
+            ['a11y-skip-link, to nowhere', 'a11y-skip-link',
+                { 'public/index.html': doc({ body: ['<a href="#nope">Skip</a><main><h1>a</h1></main>'] }) },
+                'add `id="nope"` to the main content, or fix the link'],
+            ['a11y-nav-name', 'a11y-nav-name',
+                { 'public/index.html': doc({ body: [clean, '<nav></nav><nav></nav><main id="main"><h1>a</h1></main>'] }) },
+                'give it one, such as `aria-label="Main"`'],
+            ['a11y-duplicate-id', 'a11y-duplicate-id',
+                { 'public/index.html': doc({ body: [clean, '<main id="main"><h1 id="main">a</h1></main>'] }) },
+                'make each `id` unique'],
+            ['a11y-viewport-zoom', 'a11y-viewport-zoom',
+                { 'public/index.html': page().replace('<title>', '<meta name="viewport" content="width=device-width, user-scalable=no"><title>') },
+                'remove `user-scalable=no` from its `content`'],
+            ['a11y-link-lang', 'a11y-link-lang', {
+                'config/validate.yaml': optIn('a11y-link-lang'),
+                'public/index.html': doc({ body: [clean, '<main id="main"><h1>a</h1><a href="/de/" hreflang="de">Deutsch</a></main>'] }),
+            }, 'add `lang="de"` to the link'],
+            ['a11y-reduced-motion', 'a11y-reduced-motion', {
+                'config/validate.yaml': optIn('a11y-reduced-motion'),
+                'public/site.css': 'html { scroll-behavior: smooth }\n',
+            }, 'turn the motion off inside `@media (prefers-reduced-motion: reduce)`'],
+            ['privacy-third-party, Google Fonts', 'privacy-third-party',
+                { 'public/index.html': page().replace('<title>', '<link rel="stylesheet" href="https://fonts.googleapis.com/css2"><title>') },
+                'consider self-hosting the fonts (cf. LG München I, 3 O 17493/20), or list the host under `privacy.allowed_hosts` in config/validate.yaml'],
+            ['privacy-third-party, Tag Manager', 'privacy-third-party',
+                { 'public/index.html': page().replace('<title>', '<script src="https://www.googletagmanager.com/gtag/js"></script><title>') },
+                'load it only after the visitor agrees, or list the host under `privacy.allowed_hosts`'],
+            ['privacy-third-party, another host', 'privacy-third-party',
+                { 'public/index.html': page().replace('<title>', '<script src="https://cdn.example.org/a.js"></script><title>') },
+                'self-host the resource, or name the host in the privacy policy and list the host under `privacy.allowed_hosts`'],
+            ['privacy-storage', 'privacy-storage', {
+                'config/validate.yaml': optIn('privacy-storage'),
+                'public/index.html': page().replace('<title>', '<script>localStorage.x = 1</script><title>'),
+            }, 'confirm that it is, or ask for consent before the script runs'],
+            ['legal-imprint-link, by link text', 'legal-imprint-link',
+                { 'public/index.html': doc({ body: [clean, '<main id="main"><h1>a</h1></main>'], footer: false }) },
+                'link it from the layout, such as in the footer, or, if it is linked under another name, set `legal.imprint`'],
+            ['legal-privacy-link, configured', 'legal-privacy-link', {
+                'config/validate.yaml': 'legal:\n  privacy:\n    en: /data.html\n',
+                'public/index.html': page(),
+            }, 'link it from the layout, such as in the footer (Art. 13 DSGVO)'],
+            ['legal-outdated-law, TMG', 'legal-outdated-law',
+                { 'public/imprint.html': legalPage }, 'cite § 5 DDG for the imprint duty instead'],
+            ['legal-outdated-law, TTDSG', 'legal-outdated-law',
+                { 'public/imprint.html': legalPage }, 'cite the TDDDG instead'],
+            ['legal-outdated-law, RStV', 'legal-outdated-law',
+                { 'public/imprint.html': legalPage }, 'cite § 18 MStV instead'],
+            ['config-invalid, legal not a mapping', 'config-invalid',
+                { 'config/validate.yaml': 'legal: yes\n' },
+                'put `imprint:` and `privacy:` under it'],
+            ['config-invalid, privacy not a mapping', 'config-invalid',
+                { 'config/validate.yaml': 'privacy: [a]\n' },
+                'put `allowed_hosts:` under it'],
+            ['config-invalid, allowed_hosts not a list', 'config-invalid',
+                { 'config/validate.yaml': 'privacy:\n  allowed_hosts: cdn.example.org\n' },
+                'write it as `allowed_hosts: [cdn.example.org]`'],
+            ['config-invalid, legal.privacy not a mapping', 'config-invalid',
+                { 'config/validate.yaml': 'legal:\n  privacy: [/x.html]\n' },
+                'write it as `privacy: { de: /de/datenschutz.html }`'],
+            ['config-invalid, legal.privacy.<lang> not a site path', 'config-invalid',
+                { 'config/validate.yaml': 'legal:\n  privacy:\n    de: x.html\n' },
+                'such as /de/datenschutz.html'],
+        ]
+
+        it.each(CASES)('%s', async (_, rule, files, phrase) => {
+            await buildSite()
+            for (const [rel, content] of Object.entries(files)) {
+                await write(rel, content)
+            }
+            const messages = validateOutput({ cwd })
+                .filter((r) => r.rule === rule)
+                .map((r) => r.message)
+            expect(messages.some((m) => m.includes(phrase))).toBe(true)
+            for (const m of messages) expect(m).not.toContain('\n')
+        })
+    })
 })
 
 // The bin, run as a process: `--output` is the output pass, without it the
