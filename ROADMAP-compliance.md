@@ -63,8 +63,8 @@ a third is the usual estimate). The output must say so rather than suggest that
 a clean run means a compliant site.
 
 **Tone of every message:** a hint, not legal advice. Messages name the rule and
-what was found ("loads fonts.googleapis.com — a third-party request that sends
-the visitor's IP address"), never a verdict ("violates the DSGVO").
+what was found ("loads Google Fonts from fonts.googleapis.com — a third-party
+request that sends the visitor's IP address"), never a verdict ("violates the DSGVO").
 
 ## Design
 

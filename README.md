@@ -121,8 +121,8 @@ plugin. It is read-only and throws "run `nera build` first" when the folder is
 missing or holds no HTML.
 
 **These are hints, not legal advice.** A message names what was found ("loads
-fonts.googleapis.com — a third-party request that sends the visitor's IP
-address"), never a verdict. Automated checks find only part of the
+Google Fonts from fonts.googleapis.com — a third-party request that sends
+the visitor's IP address"), never a verdict. Automated checks find only part of the
 accessibility problems — about a third of WCAG failures is the usual estimate;
 contrast, visible focus, target size and reflow need a real browser and are not
 checked. A clean run is not proof of compliance, which is why
