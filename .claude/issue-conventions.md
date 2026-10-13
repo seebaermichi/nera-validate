@@ -63,3 +63,9 @@ releases); this file only adds what a reviewer checks per diff.
 - README changes when the rule list, options or result shape changed.
 - Hand over the release commands (`git push`, `git tag -a v<x.y.z> …`) — do not run
   them.
+- If the release changes a config key or default, a command, template markup or
+  paths, `app.*`/`meta.*` output or a hook (minor or major): check the nera.js.org
+  tutorials that stamp this package (`grep -l 'validate:'
+  ../nera-website/pages/tutorials/*.md`) — still right → bump their
+  `verified_with`; stale → fix in en/de/es or file a `[nera-website] Tutorial …`
+  issue. See "Check the tutorials too" in `../CLAUDE.md` and `/tutorial-review`.
