@@ -13,10 +13,10 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                # Node 18 is deliberately absent: it reached EOL 2025-04-30 and
-                # the package declares `engines.node: ^20.19.0 || >=22.0.0`, matching
-                # @nera-static/core.
-                node-version: [20, 22]
+                # Node 20 reached end of life on 2026-04-30, and the dev
+                # toolchain (vitest 5) needs Node 22.12 or later, so CI tests
+                # 22 and 24. `engines` is unchanged: a CI-only change.
+                node-version: [22, 24]
 
         steps:
             - uses: actions/checkout@v7
