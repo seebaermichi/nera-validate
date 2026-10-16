@@ -244,7 +244,7 @@ for example. The same pages are what `legal-outdated-law` reads.
 
 ## Requirements
 
-Node.js 20.19 or later (Node 21 excluded).
+Node.js 22.12 or later.
 
 ## License
 

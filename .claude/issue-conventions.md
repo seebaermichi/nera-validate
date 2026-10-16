@@ -29,7 +29,7 @@ releases); this file only adds what a reviewer checks per diff.
 
 ## Framework correctness
 
-- ESM only, Node `^20.19.0 || >=22.0.0`; eslint style: 4-space indent, no
+- ESM only, Node `>=22.12.0`; eslint style: 4-space indent, no
   semicolons, single quotes. No new runtime dependency without a stated reason —
   every site installs this package through `@nera-static/nera`.
 - Resolution goes through `@nera-static/core`'s canonical resolver
