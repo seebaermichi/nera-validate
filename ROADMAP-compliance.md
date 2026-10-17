@@ -6,7 +6,8 @@
 > --check`, `--output`, READMEs, CLI docs) implemented 2026-10-09; slice 5
 > (field test, then release) done 2026-10-09 — validate 1.2.0 and nera 1.3.0
 > published, nera-website on them with `nera build --check` in CI. All five
-> slices done.**
+> slices done. Slice 6 (consent-gated resources, `privacy-consent-leak`)
+> specified 2026-10-17, not done.**
 >
 > This document is the single source of truth for teaching `@nera-static/validate`
 > to check the **built HTML** of a Nera site for accessibility (WCAG / BITV /
@@ -55,8 +56,17 @@ can decide without rendering — the rule catalogue below.
   page has no link to an imprint" or "the imprint cites the TMG". It cannot say
   "the privacy policy matches what the site does" — that was `98f49c1`.
 - **Whether a law applies at all** (e.g. whether the BFSG covers a given site).
-- **Consent banners.** A static scan can see that a third-party script is
-  loaded; it cannot see whether a banner gates it.
+- **Whether a consent banner works.** A static scan sees what the HTML loads
+  on page view. It cannot see a banner's runtime: whether it asks before
+  anything loads, offers "reject" as easily as "accept", or stores the choice
+  correctly. What it *can* see is the inert markup a consent tool leaves in
+  the page, and since slice 6 it reads the documented markup contract of
+  `@nera-static/plugin-consent` (`data-consent`, `data-src`,
+  `data-consent-<name>`): a correctly gated resource is not loaded on page
+  view and gives no finding, a resource marked `data-consent` that still loads
+  is `privacy-consent-leak` (decisions 9–12). validate does not depend on the
+  plugin package, only on that markup; any consent tool that writes the same
+  inert form is read the same way.
 
 Automated accessibility testing catches only a minority of WCAG failures (around
 a third is the usual estimate). The output must say so rather than suggest that
@@ -182,7 +192,8 @@ translate messages by id). `opt-in` rules are `off` until enabled in
 
 | rule | finds | default |
 |---|---|---|
-| `privacy-third-party` | a resource loaded from a host other than the site's own (`origin` in `app.yaml`, else `app_origin` in `canonical-links.yaml` — decision 6) or a relative URL: `script[src]`, `link[rel=stylesheet\|preload\|icon\|modulepreload]`, `img`, `iframe`, `video`, `audio`, `source`, and `@import`/`url()`/`@font-face` in CSS. Plain `<a href>` links are not resources and are ignored. Hosts in `privacy.allowed_hosts` are skipped. Known hosts get a specific message (Google Fonts → IP transfer, cf. LG München I, 3 O 17493/20; YouTube/Vimeo embeds; Google Analytics/Tag Manager; maps) | warning |
+| `privacy-third-party` | a resource loaded from a host other than the site's own (`origin` in `app.yaml`, else `app_origin` in `canonical-links.yaml` — decision 6) or a relative URL: `script[src]` with a JavaScript type (decision 11), `link[rel=stylesheet\|preload\|icon\|modulepreload]`, `img`, `iframe`, `embed[src]`, `object[data]`, `video`, `audio`, `source`, `track[src]`, and `@import`/`url()`/`@font-face` in CSS. Plain `<a href>` links are not resources and are ignored. Inert, consent-gated markup (`data-src`, `data-consent-<name>`) is never read as a URL (decision 9). Hosts in `privacy.allowed_hosts` are skipped. Known hosts get a specific message (Google Fonts → IP transfer, cf. LG München I, 3 O 17493/20; YouTube/Vimeo embeds; Google Analytics/Tag Manager; maps). When the host's first use in the file is a gateable element (`script`, `iframe`, `embed`, `object`, `video`, `audio`, or a `source`/`track` inside `video`/`audio`), the message also suggests consent-gating it (decision 12) | warning |
+| `privacy-consent-leak` | an element marked for consent that still loads on page view: a `script[data-consent]` with no `type` or a JavaScript type, or a gateable `iframe`/`embed`/`object`/`video`/`audio[data-consent]` (or a `source`/`track` inside such a `video`/`audio`) with a live `src`, `data`, `poster`, `srcset` or `srcdoc`. Any host, own ones included (decision 10) | warning |
 | `privacy-insecure` | an `http://` resource or a `<form action="http://…">` | warning |
 | `privacy-storage` | a site-owned script (inline or under `public/`) touching `document.cookie`, `localStorage`, `sessionStorage` or `indexedDB` — § 25 TDDDG: storage on the device needs consent unless strictly necessary. A heuristic: the hint asks the owner to confirm it is necessary | opt-in |
 
@@ -419,6 +430,125 @@ run is not proof of compliance.
    stop a deploy. The deploy workflow keeps a plain build. nera-website's own
    three findings (slice 2) remain warnings there.
 
+6. **Consent-gated resources.** `privacy-third-party` learns to read the
+   inert markup of a consent tool, and the new `privacy-consent-leak` reports
+   markup that claims to be gated but still loads (decisions 9–12). The
+   contract read is `@nera-static/plugin-consent`'s "Markup contract" and
+   "Runtime hooks (D7)" (its `ROADMAP.md`, plugin-consent 1.0.1); validate
+   depends on that documented markup only, never on the package.
+   **Not done** (specified 2026-10-17; issue
+   `01a143bd-7f8c-70de-8b70-3fcd1636521f`). Release: one minor, 1.6.0 — a new
+   rule id and new detection, reworded `privacy-third-party` messages, no id
+   renamed or removed.
+
+   **The inert form, as the plugin writes it** (D7 table):
+
+   | element | gated form | never read as a URL |
+   |---|---|---|
+   | `<script>` | `type="text/plain"`, `data-consent="<id>"`, `data-src` (absent for an inline script), optional `data-type="module"` | `data-src` |
+   | `<iframe>` | `data-consent`, `hidden`, `src` → `data-consent-src`, `srcdoc` dropped | `data-consent-src` |
+   | `<embed>` | `data-consent`, `hidden`, `src` → `data-consent-src` | `data-consent-src` |
+   | `<object>` | `data-consent`, `hidden`, `data` → `data-consent-data` | `data-consent-data` |
+   | `<video>` | `data-consent`, `hidden`, `src` → `data-consent-src`, `poster` → `data-consent-poster` | both |
+   | `<audio>` | `data-consent`, `hidden`, `src` → `data-consent-src` | `data-consent-src` |
+   | `<source>` / `<track>` in a gated `<video>` / `<audio>` | no `data-consent` of their own; `src` → `data-consent-src`, `srcset` → `data-consent-srcset` | both |
+
+   **Not gated by the plugin, by design**, and so read exactly as today, with
+   no consent hint: `<img>`, `<picture>` and its `<source srcset>`, `<link>`,
+   CSS `url()` / `@import`. `<object><param name="src|movie|url|code">`
+   (plugin O6) is not a loading attribute in either package: validate does not
+   scan `<param>`, so legacy `<object>` markup that loads only through a
+   `<param>` is outside both rules.
+
+   **Changes, by function** (`src/output-rules.js`):
+   - One `isJsType(el)` helper decides whether a `<script>` runs as
+     JavaScript, by the browser's rule: no `type`, an empty one, `module`, or
+     an ASCII case-insensitive match (surrounding whitespace trimmed) for a
+     JavaScript MIME type essence of the WHATWG MIME Sniffing standard
+     (`text/javascript`, `application/javascript`, `text/ecmascript`,
+     `application/ecmascript`, their `x-` forms, `text/javascript1.0`–`1.5`,
+     `text/jscript`, `text/livescript`). A type with parameters
+     (`text/javascript; charset=utf-8`) is not one, as in the browser. The
+     legacy `language` attribute is not considered. `resources()`,
+     `isInlineScript` (and so `privacy-storage`) and `privacy-consent-leak`
+     share it: a gated inline script is not checked by `privacy-storage`, as
+     today, because it does not run before consent.
+   - `resources()`: `script[src]` only when `isJsType`; new entries
+     `embed: ['src']`, `object: ['data']`, `track: ['src']`. It never reads
+     `data-src` or `data-consent-*`. `privacy-insecure` uses `resources()` and
+     so covers the three new elements too, and stops reporting an inert
+     `<script type="text/plain" src="http://…">`.
+   - `thirdPartyMessage(host, gateable)` / `thirdPartyHits`: one finding per
+     host per file at its first use, unchanged; `gateable` is true when that
+     first use is a gateable element (the list in the rule table). The
+     messages then gain one clause, `CONSENT` = "gate the element behind
+     consent with `data-consent` markup (as `@nera-static/plugin-consent`
+     writes it)":
+     - known host: `loads <what> from <host> — a third-party request that
+       sends the visitor's IP address; <note>, <CONSENT>, or <ALLOW_HOST>`
+     - other host: `loads <host> — a third-party request that sends the
+       visitor's IP address; self-host the resource, <CONSENT>, or name the
+       host in the privacy policy and <ALLOW_HOST> (Art. 6 DSGVO)`
+
+     Not gateable (`img`, `link`, `picture > source`, CSS): the messages stay
+     as released.
+   - `privacy-consent-leak`, a page rule (HTML only), one finding per element
+     at its start line:
+     - a `<script data-consent>` with `isJsType`, message (placeholders in
+       angle brackets): "`<script data-consent="<id>">` runs on page view: it
+       has no `type` (or: its `type` is `<type>`), so the browser executes it
+       before consent; set `type="text/plain"` and, for an external script,
+       move `src` to `data-src` (the `@nera-static/plugin-consent` markup)".
+       A `data-consent` script with an inert type and a live `src` is not a
+       leak: the browser fetches nothing.
+     - a gateable `iframe`, `embed`, `object`, `video` or `audio` with
+       `data-consent`, or a `<source>` / `<track>` inside a `video` / `audio`
+       with `data-consent`, that has any of `src`, `data`, `poster`, `srcset`,
+       `srcdoc` present and non-empty, message: "`<<tag> data-consent="<id>">`
+       still loads `<name>` (`<value>`) on page view; <fix> so nothing loads
+       before consent (the `@nera-static/plugin-consent` markup)". Several
+       live attributes on one element are listed in one message, each with
+       its own fix: "rename it to `data-consent-<name>`" for `src`, `data`,
+       `poster` and `srcset`; "drop it — it renders while the iframe is
+       hidden, and the runtime sets only `src`" for `srcdoc`. A child is named
+       "`<source>` in `<video data-consent="<id>">`".
+     - Missing `hidden` is not a finding: it is presentation, not a load.
+
+   **Cases the tests pin** (`test/output.test.js`, one fixture page plus one
+   page per case, no network):
+   - gated, silent: an external gated script (`data-src`), an inline one, one
+     with `data-type="module"`; a gated `iframe`, `embed`, `object`, `video`
+     with `data-consent-poster` and `<source data-consent-src>` /
+     `<source data-consent-srcset>` / `<track data-consent-src>` children, and
+     `audio` — no `privacy-third-party`, no `privacy-consent-leak`.
+   - inert without consent markup: `<script type="text/plain" src="https://x">`,
+     `type="application/ld+json"`, `type="text/javascript; charset=utf-8"` —
+     no `privacy-third-party`.
+   - ungated gateable: `script`, `iframe`, `embed`, `object`, `video`,
+     `audio`, `video > track` on a third-party host — `privacy-third-party`
+     with the consent clause (a known host and an unknown one).
+   - ungated, not gateable: `img`, `<picture><source srcset>`, a stylesheet
+     `<link>`, CSS `url()` — `privacy-third-party` without the clause;
+     the same host first used by an `<img>` and then by an `<iframe>` keeps
+     the `<img>`'s message (first use decides).
+   - mis-gated: `<script data-consent>` with no `type`, with `module`, with
+     `text/javascript`; `iframe[data-consent][src]` (own host too),
+     `iframe[data-consent][srcdoc]`, `object[data-consent][data]`,
+     `video[data-consent][poster]`, a live `<source srcset>` inside a gated
+     `video` — each one `privacy-consent-leak`, and the live third-party load
+     also `privacy-third-party` (decision 10), with the consent clause: an
+     element that still loads is ungated for decision 12, `data-consent` or
+     not.
+   - `privacy-insecure` on `embed[src="http://…"]`, `object[data]`,
+     `track[src]`; silent on `data-consent-src="http://…"`.
+   - `ignore:` and rule levels (`privacy-consent-leak: off | error`) work as
+     for every rule.
+
+   Field check: a fixture site that uses plugin-consent (its own
+   `test/site/`, built with the released plugin) through `nera build --check`
+   gives no `privacy-third-party` for the gated tags and no
+   `privacy-consent-leak`.
+
 ## Decisions (2026-10-09)
 
 The open questions of the first draft, settled with the maintainer:
@@ -470,6 +600,33 @@ The open questions of the first draft, settled with the maintainer:
    slice 4 is self-contained and can be pushed before. Rejected: releasing
    validate 1.2.0 before the field test — rule ids are stable once released,
    and a change the field test forces would then be breaking.
+
+## Decisions (2026-10-17, consent-gated resources)
+
+Settled with the maintainer while planning slice 6.
+
+9. **A correctly gated resource gives no finding.** Gated means not loaded on
+   page view, so there is nothing to report under `privacy-third-party`.
+   Rejected: an opt-in rule listing the gated resources (an inventory is the
+   privacy policy's job, not a validator hint).
+10. **Mis-gating is its own rule, `privacy-consent-leak` (warning), one finding
+    per element and host-agnostic.** An element marked `data-consent` that
+    still loads is a broken promise whichever host it reaches, own ones
+    included. `privacy-third-party` still reports the live third-party load on
+    its own, so the two findings say different things: "this loads a third
+    party" and "this was meant to wait for consent".
+11. **Inertness follows the browser, not `data-consent`.** A `<script>` with a
+    non-JavaScript `type` is never fetched, so `resources()` skips it whether
+    or not it carries `data-consent`, and `data-src` / `data-consent-*` are
+    never read as URLs. One `isJsType` helper serves `resources()`,
+    `isInlineScript` and the leak rule. `resources()` also gains
+    `embed[src]`, `object[data]` and `track[src]`: the plugin gates them, so an
+    ungated one is the same kind of load.
+12. **The consent hint goes on ungated gateable elements only**, decided by
+    the host's first use in the file (the one-finding-per-host rule of slice 3
+    stays). `img`, `picture > source`, `link` and CSS keep today's message,
+    because the plugin does not gate them by design; suggesting it there would
+    send the owner to a tool that cannot help.
 
 ## Open questions
 
