@@ -8,7 +8,7 @@
 > published, nera-website on them with `nera build --check` in CI. All five
 > slices done. Slice 6 (consent-gated resources, `privacy-consent-leak`)
 > specified 2026-10-17, implemented and field-checked 2026-10-18 against
-> plugin-consent 1.0.1; validate 1.6.0 awaits its release tag.**
+> plugin-consent 1.0.1; validate 1.6.0 published 2026-10-18.**
 >
 > This document is the single source of truth for teaching `@nera-static/validate`
 > to check the **built HTML** of a Nera site for accessibility (WCAG / BITV /
