@@ -45,6 +45,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `data-consent-*` attributes on gated `iframe`/`video`/`audio`/`embed`/
     `object`) therefore gives no `privacy-third-party` finding.
     `privacy-storage` uses the same rules for inline scripts.
+-   The `yaml-parse` finding for `config/app.yaml` now carries the parser's
+    line instead of `line: null`, like the one for frontmatter and
+    `config/validate.yaml`. It reads `appConfigErrorLine` from
+    `resolveSiteModel`, so `@nera-static/core` is now `^4.18.0`.
 
 ## [1.5.0] - 2026-10-16
 

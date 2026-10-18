@@ -136,7 +136,7 @@ export function validateSite({ cwd = process.cwd() } = {}) {
     if (model.appConfigError) {
         findings.push({
             file: appYaml,
-            line: null,
+            line: model.appConfigErrorLine ?? null,
             severity: 'error',
             rule: 'yaml-parse',
             message: yamlParseMessage(
