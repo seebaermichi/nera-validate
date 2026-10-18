@@ -168,7 +168,8 @@ are stable.
 
 | rule | finds | law | default |
 |---|---|---|---|
-| `privacy-third-party` | a resource (script, stylesheet, font, image, iframe, media, CSS `url()`/`@import`) loaded from another host than the site's own — the host receives the visitor's IP address. Specific messages for Google Fonts, YouTube, Vimeo, Google Analytics / Tag Manager and maps. Plain links are not resources. | Art. 6 DSGVO | warning |
+| `privacy-third-party` | a resource (script, stylesheet, font, image, iframe, embed, object, media and its tracks, CSS `url()`/`@import`) loaded from another host than the site's own — the host receives the visitor's IP address. Specific messages for Google Fonts, YouTube, Vimeo, Google Analytics / Tag Manager and maps; for a script, iframe, embed, object or media element the message also suggests gating it with `data-consent`. Plain links are not resources, and neither is consent-gated markup (see [Consent-gated resources](#consent-gated-resources)). | Art. 6 DSGVO | warning |
+| `privacy-consent-leak` | an element marked `data-consent` that still loads on page view: a script the browser runs as JavaScript, or a live `src`, `data`, `poster`, `srcset` or `srcdoc` on gated media or its `<source>`/`<track>` — on any host, your own included | § 25 TDDDG | warning |
 | `privacy-insecure` | an `http://` resource or form action | Art. 32 DSGVO | warning |
 | `privacy-storage` | a site-owned script touching `document.cookie`, `localStorage`, `sessionStorage` or `indexedDB` — confirm it is strictly necessary | § 25 TDDDG | opt-in |
 
@@ -231,6 +232,25 @@ have no page behind them; switch their rules in `config/validate.yaml`.
 same value `@nera-static/plugin-canonical-links` uses; the host counts with and
 without `www.`. With neither set, only relative URLs are the site's own, and
 every absolute resource URL is reported by its host.
+
+### Consent-gated resources
+
+The output pass reads the markup of
+[`@nera-static/plugin-consent`](https://www.npmjs.com/package/@nera-static/plugin-consent),
+not the package: it works with hand-written markup in the same form, too. A
+resource gated that way is not loaded on page view, so it gives no finding:
+
+- a `<script type="text/plain" data-consent="…">`, inline or with `data-src` —
+  more generally, any `<script>` whose `type` (or, without `type`, legacy
+  `language`) is not JavaScript is skipped;
+- an `<iframe>`, `<embed>`, `<object>`, `<video>` or `<audio>` with
+  `data-consent` whose loading attributes are renamed to `data-consent-src`,
+  `data-consent-data`, `data-consent-poster` or `data-consent-srcset` (on its
+  `<source>`/`<track>` children too).
+
+Markup that carries `data-consent` but still loads is what
+`privacy-consent-leak` reports, naming the attribute to rename. Images,
+`<link>`s and CSS are not gated by the plugin and are read as before.
 
 ### Finding the legal pages: German and English only
 

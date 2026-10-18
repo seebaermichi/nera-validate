@@ -7,7 +7,8 @@
 > (field test, then release) done 2026-10-09 — validate 1.2.0 and nera 1.3.0
 > published, nera-website on them with `nera build --check` in CI. All five
 > slices done. Slice 6 (consent-gated resources, `privacy-consent-leak`)
-> specified 2026-10-17, not done.**
+> specified 2026-10-17, implemented and field-checked 2026-10-18 against
+> plugin-consent 1.0.1; validate 1.6.0 awaits its release tag.**
 >
 > This document is the single source of truth for teaching `@nera-static/validate`
 > to check the **built HTML** of a Nera site for accessibility (WCAG / BITV /
@@ -436,7 +437,7 @@ run is not proof of compliance.
    contract read is `@nera-static/plugin-consent`'s "Markup contract" and
    "Runtime hooks (D7)" (its `ROADMAP.md`, plugin-consent 1.0.1); validate
    depends on that documented markup only, never on the package.
-   **Not done** (specified 2026-10-17; issue
+   **Done 2026-10-18** (specified 2026-10-17; issue
    `01a143bd-7f8c-70de-8b70-3fcd1636521f`). Release: one minor, 1.6.0 — a new
    rule id and new detection, reworded `privacy-third-party` messages, no id
    renamed or removed.
@@ -555,6 +556,35 @@ run is not proof of compliance.
    `test/site/`, built with the released plugin) through `nera build --check`
    gives no `privacy-third-party` for the gated tags and no
    `privacy-consent-leak`.
+   **Field check done 2026-10-18**, not on plugin-consent's own fixture but on
+   a fresh `nera new` site (nera 1.13.0) in a scratch folder, with
+   `@nera-static/plugin-consent` 1.0.1 from npm and validate 1.6.0 from
+   `npm pack` of this repo — `npm ls` showed it deduped under
+   `@nera-static/nera`, so `nera build --check` ran the local build. The
+   layout wired the plugin as its README says (`head`, `banner`, `settings`,
+   `notice`, `/_nera/consent.{css,js}`); `config/consent.yaml` had a `media`
+   category (YouTube, and a media CDN host) and an `analytics` one with a
+   Google Tag Manager script and an inline one. The home page held a YouTube
+   iframe, a `<video>` with `poster`, `<source>` and `<track>` on the CDN, a
+   YouTube `<embed>`, a hand-written gated inline script, and two ungated
+   controls (an `<img>` and an `<iframe>` on unconfigured hosts); a second
+   page held a hand-written `<script type="text/plain" src>` and an
+   `<iframe data-consent src>` on an unconfigured host. Result, four warnings:
+   - home: none for the five gated elements (the plugin wrote every one in
+     the form of the table above) and none for the two gated scripts;
+     `privacy-third-party` for the control `<img>` without the consent clause
+     and for the control `<iframe>` with it.
+   - second page: `privacy-third-party` (with the clause) and
+     `privacy-consent-leak` ("rename `src` to `data-consent-src`") for the
+     mis-gated iframe; nothing for the inert script.
+
+   The same site checked with validate 1.5.0 from npm also gave nothing for
+   the home page's gated elements — plugin-consent never writes a live `src`
+   on an inert script, and its renamed attributes were never read — but it
+   reported the hand-written inert script as `privacy-third-party` and missed
+   the leak. So for plugin-consent's own output slice 6 adds the consent
+   clause and the leak rule; the false positive it removes comes from
+   hand-written inert scripts. No rule changed after the field check.
 
 ## Decisions (2026-10-09)
 
