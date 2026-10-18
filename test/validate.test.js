@@ -111,11 +111,11 @@ describe('validateSite', () => {
         expect(finding.line).toBeGreaterThanOrEqual(2)
     })
 
-    it('errors on malformed config/app.yaml', async () => {
+    it('errors on malformed config/app.yaml with the parser line', async () => {
         await buildValidSite()
         await fs.writeFile(
             path.join(cwd, 'config', 'app.yaml'),
-            'name: [unterminated\n'
+            'name: Test\nlang: en\nname: Again\n'
         )
         const results = validateSite({ cwd })
 
@@ -124,6 +124,7 @@ describe('validateSite', () => {
         )
         expect(finding).toBeDefined()
         expect(finding.severity).toBe('error')
+        expect(finding.line).toBe(3) // the duplicate `name:` key
     })
 
     it('errors when a configured theme cannot be resolved', async () => {
