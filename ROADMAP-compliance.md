@@ -498,23 +498,27 @@ run is not proof of compliance.
    - `privacy-consent-leak`, a page rule (HTML only), one finding per element
      at its start line:
      - a `<script data-consent>` with `isJsType`, message (placeholders in
-       angle brackets): "`<script data-consent="<id>">` runs on page view: it
-       has no `type` (or: its `type` is `<type>`), so the browser executes it
-       before consent; set `type="text/plain"` and, for an external script,
-       move `src` to `data-src` (the `@nera-static/plugin-consent` markup)".
-       A `data-consent` script with an inert type and a live `src` is not a
-       leak: the browser fetches nothing.
+       angle brackets; `<script …>` shows its `data-consent`, `type` and `src`
+       values): "`<script …>` is marked `data-consent` but runs as JavaScript
+       — the browser runs it before the visitor agrees; set
+       `type="text/plain"`[, rename `src` to `data-src`][, add
+       `data-type="module"`], as in the markup of @nera-static/plugin-consent
+       (§ 25 TDDDG)" — the `src` clause for an external script, the module
+       clause when the `type` was `module`. A `data-consent` script with an
+       inert type and a live `src` is not a leak: the browser fetches nothing.
      - a gateable `iframe`, `embed`, `object`, `video` or `audio` with
-       `data-consent`, or a `<source>` / `<track>` inside a `video` / `audio`
-       with `data-consent`, that has any of `src`, `data`, `poster`, `srcset`,
-       `srcdoc` present and non-empty, message: "`<<tag> data-consent="<id>">`
-       still loads `<name>` (`<value>`) on page view; <fix> so nothing loads
-       before consent (the `@nera-static/plugin-consent` markup)". Several
-       live attributes on one element are listed in one message, each with
-       its own fix: "rename it to `data-consent-<name>`" for `src`, `data`,
-       `poster` and `srcset`; "drop it — it renders while the iframe is
-       hidden, and the runtime sets only `src`" for `srcdoc`. A child is named
-       "`<source>` in `<video data-consent="<id>">`".
+       `data-consent`, or a `<source>` / `<track>` that is a direct child of
+       such a `video` / `audio`, with a live loading attribute present and
+       non-empty — per element as the plugin renames them (`iframe`: `src`,
+       `srcdoc`; `embed`, `audio`, `track`: `src`; `object`: `data`; `video`:
+       `src`, `poster`; `source`: `src`, `srcset`), message: "`<<tag> …>` is
+       marked `data-consent` (a child: is inside a `data-consent`
+       `<video>`) but still loads through `<name>`[ and `<name>`] — the
+       browser fetches it before the visitor agrees; <fix>[ and <fix>], as in
+       the markup of @nera-static/plugin-consent (§ 25 TDDDG)", where
+       `<<tag> …>` shows the live attributes' values (`srcdoc` by name only)
+       and <fix> is "rename `<name>` to `data-consent-<name>`", or "remove
+       `srcdoc`" (the plugin drops it; the runtime sets only `src`).
      - Missing `hidden` is not a finding: it is presentation, not a load.
 
    **Cases the tests pin** (`test/output.test.js`, one fixture page plus one

@@ -222,6 +222,60 @@ function thirdPartyHits(uses, site) {
     return [...hits.values()]
 }
 
+// The loading attributes plugin-consent renames to `data-consent-<name>` on a
+// gated element and on the `<source>`/`<track>` children of gated media
+// (`srcdoc` it drops instead). Any of them left live loads before consent.
+const GATED_ATTRS = {
+    iframe: ['src', 'srcdoc'],
+    embed: ['src'],
+    object: ['data'],
+    video: ['src', 'poster'],
+    audio: ['src'],
+    source: ['src', 'srcset'],
+    track: ['src'],
+}
+
+const isConsentMarked = (el) => 'data-consent' in el.attribs
+
+// The message when an element marked for consent still loads, else null:
+// a `data-consent` script the browser runs, a live loading attribute on a
+// `data-consent` element, or on a `<source>`/`<track>` of `data-consent` media.
+// The plugin's wrapper `div[data-consent-embed]` loads nothing.
+function consentLeak(el) {
+    if (el.name === 'script') {
+        if (!isConsentMarked(el) || !isJsType(el)) return null
+        const src = attr(el, 'src')
+        const module = attr(el, 'type').toLowerCase() === 'module'
+        const fix = [
+            'set `type="text/plain"`',
+            ...(src ? ['rename `src` to `data-src`'] : []),
+            ...(module ? ['add `data-type="module"`'] : []),
+        ]
+        return `${describe(el, ['data-consent', 'type', 'src'])} is marked ` +
+            '`data-consent` but runs as JavaScript — the browser runs it ' +
+            `before the visitor agrees; ${fix.join(', ')}, as in the markup ` +
+            'of @nera-static/plugin-consent (§ 25 TDDDG)'
+    }
+    if (!(el.name in GATED_ATTRS)) return null
+    const child = el.name === 'source' || el.name === 'track'
+    const gated = !child ? el
+        : ['video', 'audio'].includes(el.parent?.name) ? el.parent : null
+    if (!gated || !isConsentMarked(gated)) return null
+    const live = GATED_ATTRS[el.name].filter((name) => attr(el, name))
+    if (live.length === 0) return null
+    const where = child
+        ? `inside a \`data-consent\` \`<${gated.name}>\``
+        : 'marked `data-consent`'
+    const fix = live.map((name) => (name === 'srcdoc'
+        ? 'remove `srcdoc`'
+        : `rename \`${name}\` to \`data-consent-${name}\``))
+    return `${describe(el, live.filter((name) => name !== 'srcdoc'))} is ` +
+        `${where} but still loads through ${live.map((n) => `\`${n}\``).join(' and ')} — ` +
+        'the browser fetches it before the visitor agrees; ' +
+        `${fix.join(' and ')}, as in the markup of @nera-static/plugin-consent ` +
+        '(§ 25 TDDDG)'
+}
+
 // Device storage a script reaches for, by plain text match (no JS parser).
 const STORAGE = [
     ['`document.cookie`', /\bdocument\.cookie\b/],
@@ -795,6 +849,17 @@ export const OUTPUT_RULES = [
                 uses.map(({ url, offset }) => ({ url, line: lineAt(css, offset) })),
                 site
             )
+        },
+    },
+    {
+        id: 'privacy-consent-leak',
+        level: 'warning',
+        check({ document, lineOf }) {
+            return all(document, named('script', ...Object.keys(GATED_ATTRS)))
+                .flatMap((el) => {
+                    const message = consentLeak(el)
+                    return message ? [{ line: lineOf(el), message }] : []
+                })
         },
     },
     {

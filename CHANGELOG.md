@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.6.0] - 2026-10-17
 
+### Added
+
+-   Output rule `privacy-consent-leak` (warning): an element marked for
+    consent with `data-consent` that still loads on page view — a
+    `data-consent` `<script>` the browser runs as JavaScript, a live
+    `src`/`data`/`poster`/`srcdoc` on a `data-consent` `iframe`/`embed`/
+    `object`/`video`/`audio`, or a live `src`/`srcset` on a `<source>`/
+    `<track>` of `data-consent` media. One finding per element, on any host,
+    naming the attribute to rename after the markup of
+    `@nera-static/plugin-consent`. A third-party leak is also reported by
+    `privacy-third-party`. Turn it off with `privacy-consent-leak: off` under
+    `rules:` in `config/validate.yaml`.
+
 ### Changed
 
 -   The output pass now reads `<embed src>`, `<object data>` and `<track src>`

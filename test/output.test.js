@@ -750,6 +750,148 @@ describe('validateOutput', () => {
             })
         })
 
+        describe('privacy-consent-leak', () => {
+            const head = (h) => h.message.split(' — ')[0]
+
+            it('warns on each data-consent element that still loads, own host included', async () => {
+                const hits = await check('privacy-consent-leak', doc({
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<script data-consent="analytics" src="https://cdn.example.org/a.js"></script>',
+                        '<script type="module" data-consent="analytics" src="/js/stats.js"></script>',
+                        '<script data-consent="analytics">gtag(\'js\')</script>',
+                        '<iframe data-consent="media" hidden src="https://www.youtube-nocookie.com/embed/abc"></iframe>',
+                        '<iframe data-consent="media" hidden srcdoc="hi" data-consent-src="https://e.example/x"></iframe>',
+                        '<embed data-consent="media" hidden src="https://media.example/a.swf">',
+                        '<object data-consent="media" hidden data="https://media.example/a.pdf"></object>',
+                        '<video data-consent="media" hidden poster="https://media.example/p.jpg" ' +
+                            'data-consent-src="https://media.example/v.mp4">',
+                        '<source srcset="https://media.example/v.webm" type="video/webm">',
+                        '<track kind="captions" src="https://media.example/v.vtt">',
+                        '</video>',
+                        '<audio data-consent="media" hidden src="/a.mp3"></audio>',
+                        '</main>',
+                    ],
+                }))
+                expect(hits.map((h) => [h.line, head(h)])).toEqual([
+                    [8, '`<script data-consent="analytics" src="https://cdn.example.org/a.js">` is marked `data-consent` but runs as JavaScript'],
+                    [9, '`<script data-consent="analytics" type="module" src="/js/stats.js">` is marked `data-consent` but runs as JavaScript'],
+                    [10, '`<script data-consent="analytics">` is marked `data-consent` but runs as JavaScript'],
+                    [11, '`<iframe src="https://www.youtube-nocookie.com/embed/abc">` is marked `data-consent` but still loads through `src`'],
+                    [12, '`<iframe>` is marked `data-consent` but still loads through `srcdoc`'],
+                    [13, '`<embed src="https://media.example/a.swf">` is marked `data-consent` but still loads through `src`'],
+                    [14, '`<object data="https://media.example/a.pdf">` is marked `data-consent` but still loads through `data`'],
+                    [15, '`<video poster="https://media.example/p.jpg">` is marked `data-consent` but still loads through `poster`'],
+                    [16, '`<source srcset="https://media.example/v.webm">` is inside a `data-consent` `<video>` but still loads through `srcset`'],
+                    [17, '`<track src="https://media.example/v.vtt">` is inside a `data-consent` `<video>` but still loads through `src`'],
+                    [19, '`<audio src="/a.mp3">` is marked `data-consent` but still loads through `src`'],
+                ])
+                expect(hits[0].message).toContain(
+                    'set `type="text/plain"`, rename `src` to `data-src`, as in the markup of ' +
+                    '@nera-static/plugin-consent (§ 25 TDDDG)')
+                expect(hits[1].message).toContain(
+                    'set `type="text/plain"`, rename `src` to `data-src`, add `data-type="module"`')
+                expect(hits[2].message).toContain('the browser runs it before the visitor agrees; ' +
+                    'set `type="text/plain"`, as in the markup')
+                expect(hits[4].message).toContain('; remove `srcdoc`, as in the markup')
+            })
+
+            it('names every live attribute of one element in one finding', async () => {
+                const hits = await check('privacy-consent-leak', doc({
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<video data-consent="media" src="/v.mp4" poster="/p.jpg"></video>',
+                        '</main>',
+                    ],
+                }))
+                expect(hits).toHaveLength(1)
+                expect(hits[0].message).toContain('`<video src="/v.mp4" poster="/p.jpg">` is marked ' +
+                    '`data-consent` but still loads through `src` and `poster` — the browser ' +
+                    'fetches it before the visitor agrees; rename `src` to `data-consent-src` ' +
+                    'and rename `poster` to `data-consent-poster`')
+            })
+
+            it('stays silent on plugin-consent\'s own markup and on unmarked elements', async () => {
+                expect(await check('privacy-consent-leak', doc({
+                    head: [
+                        '<title>T</title>',
+                        '<script type="text/plain" data-consent="analytics" ' +
+                            'data-src="https://matomo.example.com/matomo.js" async></script>',
+                        '<script type="text/plain" data-consent="analytics">var _paq = []</script>',
+                        '<script type="text/plain" data-consent="analytics" data-type="module" ' +
+                            'data-src="/js/stats.js"></script>',
+                    ],
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<div class="nera-consent-embed" data-consent-embed data-consent="media">' +
+                            '<iframe data-consent="media" data-consent-src="https://www.youtube-nocookie.com/embed/abc" ' +
+                            'title="Video" hidden></iframe>' +
+                            '<div class="nera-consent-embed__placeholder"><button type="button" data-consent-load>Load</button>' +
+                            '<button type="button" data-consent-open>Settings</button></div></div>',
+                        '<div class="nera-consent-embed" data-consent-embed data-consent="media">',
+                        '<video data-consent="media" controls data-consent-poster="https://cdn.example.com/p.jpg" hidden>',
+                        '<source data-consent-src="https://cdn.example.com/v.webm" type="video/webm">',
+                        '<source data-consent-srcset="https://cdn.example.com/v.mp4" type="video/mp4">',
+                        '<track data-consent-src="https://cdn.example.com/c.vtt" kind="captions">',
+                        '</video>',
+                        '<div class="nera-consent-embed__placeholder"></div>',
+                        '</div>',
+                        '<embed data-consent="media" data-consent-src="https://cdn.example.com/a.swf" hidden>',
+                        '<object data-consent="media" data-consent-data="https://cdn.example.com/a.pdf" hidden></object>',
+                        // not marked: privacy-third-party's business, not this rule's
+                        '<script src="https://cdn.example.org/a.js"></script>',
+                        '<video src="https://cdn.example.org/v.mp4"><source src="https://cdn.example.org/v.webm"></video>',
+                        '<picture><source srcset="https://cdn.example.org/a.avif"><img src="/a.png" alt=""></picture>',
+                        '</main>',
+                    ],
+                }))).toEqual([])
+            })
+
+            it('is turned off in config/validate.yaml', async () => {
+                const html = doc({
+                    body: ['<main><h1>Hi</h1>', '<iframe data-consent="media" src="/x.html"></iframe>', '</main>'],
+                })
+                expect(await check('privacy-consent-leak', html)).toHaveLength(1)
+                expect(await check('privacy-consent-leak', html, {
+                    config: 'rules:\n  privacy-consent-leak: off\n',
+                })).toEqual([])
+            })
+
+            it('gives exactly the expected findings on gated, ungated and mis-gated markup', async () => {
+                await buildSite()
+                await write('public/index.html', doc({
+                    head: [
+                        '<title>T</title>',
+                        // gated
+                        '<script type="text/plain" data-consent="analytics" ' +
+                            'data-src="https://www.googletagmanager.com/gtag/js?id=G-1"></script>',
+                        // ungated
+                        '<script src="https://cdn.example.org/a.js"></script>',
+                    ],
+                    body: [
+                        '<a href="#main">Skip</a>',
+                        '<main id="main"><h1>Hi</h1>',
+                        // gated
+                        '<div class="nera-consent-embed" data-consent-embed data-consent="media">' +
+                            '<iframe data-consent="media" data-consent-src="https://www.youtube-nocookie.com/embed/abc" ' +
+                            'title="Video" hidden></iframe></div>',
+                        // ungated
+                        '<iframe src="https://player.vimeo.com/video/1" title="Vimeo"></iframe>',
+                        // mis-gated: still loads, so both rules report it (D2)
+                        '<iframe data-consent="maps" hidden src="https://maps.google.com/maps?q=x" title="Map"></iframe>',
+                        '</main>',
+                    ],
+                }))
+                expect(validateOutput({ cwd }).map((r) => [r.rule, r.line, r.message.split(' — ')[0]])).toEqual([
+                    ['privacy-third-party', 6, 'loads cdn.example.org'],
+                    ['privacy-third-party', 12, 'loads a Vimeo embed from player.vimeo.com'],
+                    ['privacy-third-party', 13, 'loads a map from maps.google.com'],
+                    ['privacy-consent-leak', 13,
+                        '`<iframe src="https://maps.google.com/maps?q=x">` is marked `data-consent` but still loads through `src`'],
+                ])
+            })
+        })
+
         describe('privacy-insecure', () => {
             it('warns on http:// resources and form actions, by element', async () => {
                 const hits = await check('privacy-insecure', doc({
@@ -1269,6 +1411,12 @@ describe('validateOutput', () => {
             ['privacy-third-party, another host, not gateable', 'privacy-third-party',
                 { 'public/index.html': page().replace('<title>', '<link rel="icon" href="https://cdn.example.org/f.svg"><title>') },
                 'self-host the resource, or name the host in the privacy policy and list the host under `privacy.allowed_hosts`'],
+            ['privacy-consent-leak, script', 'privacy-consent-leak',
+                { 'public/index.html': page().replace('<title>', '<script data-consent="analytics" src="/js/a.js"></script><title>') },
+                'set `type="text/plain"`, rename `src` to `data-src`, as in the markup of @nera-static/plugin-consent'],
+            ['privacy-consent-leak, iframe', 'privacy-consent-leak',
+                { 'public/index.html': page().replace('<title>', '<iframe data-consent="media" hidden src="/x.html"></iframe><title>') },
+                'rename `src` to `data-consent-src`, as in the markup of @nera-static/plugin-consent'],
             ['privacy-storage', 'privacy-storage', {
                 'config/validate.yaml': optIn('privacy-storage'),
                 'public/index.html': page().replace('<title>', '<script>localStorage.x = 1</script><title>'),
