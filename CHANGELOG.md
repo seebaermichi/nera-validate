@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-10-17
+
+### Changed
+
+-   The output pass now reads `<embed src>`, `<object data>` and `<track src>`
+    as resources, so `privacy-third-party` and `privacy-insecure` report them
+    like an `<iframe>` or `<video>`. Sites with such elements may see new
+    warnings.
+
+### Fixed
+
+-   A `<script>` the browser never runs is no longer read as a resource:
+    `privacy-third-party` and `privacy-insecure` skip a `src` on a script whose
+    `type` is not JavaScript (`text/plain`, JSON-LD, an import map, a type with
+    parameters), following the HTML spec's rules (case and surrounding
+    whitespace ignored, legacy `language` honoured). The consent-gated markup
+    of `@nera-static/plugin-consent` (`type="text/plain"` with `data-src`,
+    `data-consent-*` attributes on gated `iframe`/`video`/`audio`/`embed`/
+    `object`) therefore gives no `privacy-third-party` finding.
+    `privacy-storage` uses the same rules for inline scripts.
+
 ## [1.5.0] - 2026-10-16
 
 ### Changed

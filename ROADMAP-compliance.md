@@ -468,8 +468,10 @@ run is not proof of compliance.
      (`text/javascript`, `application/javascript`, `text/ecmascript`,
      `application/ecmascript`, their `x-` forms, `text/javascript1.0`–`1.5`,
      `text/jscript`, `text/livescript`). A type with parameters
-     (`text/javascript; charset=utf-8`) is not one, as in the browser. The
-     legacy `language` attribute is not considered. `resources()`,
+     (`text/javascript; charset=utf-8`) is not one, as in the browser. A
+     missing `type` falls back to the legacy `language` attribute
+     (`text/<language>`, so `language="vbscript"` is inert); an empty `type`
+     wins over it, as in the browser. `resources()`,
      `isInlineScript` (and so `privacy-storage`) and `privacy-consent-leak`
      share it: a gated inline script is not checked by `privacy-storage`, as
      today, because it does not run before consent.

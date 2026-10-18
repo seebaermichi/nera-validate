@@ -95,13 +95,43 @@ const RESOURCE_ATTRS = {
     video: ['src', 'poster'],
     audio: ['src'],
     source: ['src', 'srcset'],
+    track: ['src'],
+    embed: ['src'],
+    object: ['data'],
 }
 const RESOURCE_RELS = ['stylesheet', 'preload', 'icon', 'modulepreload']
 
-// Every `{ el, name, url }` a page loads, in document order.
+// The MIME type essences a browser runs a `<script>` as JavaScript for (HTML
+// spec, "JavaScript MIME type"), plus `module`.
+const JS_TYPES = new Set([
+    'module',
+    'application/ecmascript', 'application/javascript',
+    'application/x-ecmascript', 'application/x-javascript',
+    'text/ecmascript', 'text/javascript', 'text/javascript1.0',
+    'text/javascript1.1', 'text/javascript1.2', 'text/javascript1.3',
+    'text/javascript1.4', 'text/javascript1.5', 'text/jscript',
+    'text/livescript', 'text/x-ecmascript', 'text/x-javascript',
+])
+
+// Whether the browser runs a `<script>` as JavaScript, by the HTML spec's
+// rules: a missing or empty `type` means JavaScript (unless a legacy
+// `language` says otherwise), matching ignores case and surrounding
+// whitespace, and a type with parameters is not run. Any other type — JSON-LD,
+// an import map, a template, plugin-consent's gated `text/plain` — is inert,
+// so its `src` is never fetched.
+function isJsType(el) {
+    const type = attr(el, 'type').toLowerCase()
+    if (type) return JS_TYPES.has(type)
+    const language = attr(el, 'language').toLowerCase()
+    return 'type' in el.attribs || !language || JS_TYPES.has(`text/${language}`)
+}
+
+// Every `{ el, name, url }` a page loads, in document order. An inert
+// `<script>` loads nothing, and `data-src`/`data-consent-*` are never URLs.
 function resources(document) {
     return all(document, (el) => {
         if (!(el.name in RESOURCE_ATTRS)) return false
+        if (el.name === 'script') return isJsType(el)
         if (el.name !== 'link') return true
         const rels = attr(el, 'rel').toLowerCase().split(/\s+/)
         return rels.some((r) => RESOURCE_RELS.includes(r))
@@ -203,11 +233,8 @@ const storageNote =
 
 // An inline `<script>` that runs as JavaScript (not JSON-LD, an import map or
 // a template).
-const isInlineScript = (el) => {
-    if (el.name !== 'script' || 'src' in el.attribs) return false
-    const type = attr(el, 'type').toLowerCase()
-    return !type || type === 'module' || /^(text|application)\/(javascript|ecmascript)$/.test(type)
-}
+const isInlineScript = (el) =>
+    el.name === 'script' && !('src' in el.attribs) && isJsType(el)
 
 // The words the link-text heuristic looks for, and the page languages it
 // applies to. A page in another language is not guessed at: it is checked only

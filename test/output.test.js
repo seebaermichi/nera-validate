@@ -616,6 +616,75 @@ describe('validateOutput', () => {
                 expect(hits[0]).not.toHaveProperty('source')
             })
 
+            it('skips scripts the browser does not run, and reads only live URLs', async () => {
+                expect(await check('privacy-third-party', doc({
+                    head: [
+                        '<title>T</title>',
+                        '<script type="text/plain" src="https://hand.example/a.js"></script>',
+                        '<script type="application/ld+json" src="https://ld.example/x.json"></script>',
+                        '<script type="importmap" src="https://map.example/m.json"></script>',
+                        '<script type="text/javascript; charset=utf-8" src="https://param.example/a.js"></script>',
+                        '<script language="vbscript" src="https://vb.example/a.vbs"></script>',
+                    ],
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        // plugin-consent's gated markup (its ROADMAP, "Markup contract")
+                        '<script type="text/plain" data-consent="analytics" ' +
+                            'data-src="https://www.googletagmanager.com/gtag/js?id=G-1"></script>',
+                        '<script type="text/plain" data-consent="analytics">gtag(\'js\')</script>',
+                        '<script type="text/plain" data-consent="analytics" data-type="module" ' +
+                            'data-src="https://cdn.example.org/m.js"></script>',
+                        '<iframe data-consent="youtube" hidden ' +
+                            'data-consent-src="https://www.youtube-nocookie.com/embed/abc"></iframe>',
+                        '<video data-consent="media" hidden controls ' +
+                            'data-consent-poster="https://media.example/p.jpg">',
+                        '<source data-consent-src="https://media.example/v.mp4" type="video/mp4">',
+                        '<track kind="captions" data-consent-src="https://media.example/v.vtt">',
+                        '</video>',
+                        '<embed data-consent="media" hidden data-consent-src="https://media.example/a.swf">',
+                        '<object data-consent="media" hidden data-consent-data="https://media.example/a.pdf"></object>',
+                        '</main>',
+                    ],
+                }))).toEqual([])
+            })
+
+            it('runs scripts whatever the case and whitespace of a JavaScript type', async () => {
+                const hits = await check('privacy-third-party', doc({
+                    head: [
+                        '<title>T</title>',
+                        '<script type="" src="https://empty.example/a.js"></script>',
+                        '<script type=" Module " src="https://module.example/a.js"></script>',
+                        '<script type="TEXT/JavaScript" src="https://case.example/a.js"></script>',
+                        '<script type="application/x-javascript" src="https://legacy.example/a.js"></script>',
+                        '<script language="JavaScript" src="https://lang.example/a.js"></script>',
+                    ],
+                }))
+                expect(hits.map((h) => h.message.split(' — ')[0])).toEqual([
+                    'loads empty.example',
+                    'loads module.example',
+                    'loads case.example',
+                    'loads legacy.example',
+                    'loads lang.example',
+                ])
+            })
+
+            it('reads <embed src>, <object data> and <track src>', async () => {
+                const hits = await check('privacy-third-party', doc({
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<embed src="https://embed.example/a.swf">',
+                        '<object data="https://object.example/a.pdf"></object>',
+                        '<video src="/v.mp4"><track kind="captions" src="https://track.example/v.vtt"></video>',
+                        '</main>',
+                    ],
+                }))
+                expect(hits.map((h) => [h.line, h.message.split(' — ')[0]])).toEqual([
+                    [8, 'loads embed.example'],
+                    [9, 'loads object.example'],
+                    [10, 'loads track.example'],
+                ])
+            })
+
             it('collapses the same template resource across pages', async () => {
                 await buildSite()
                 const html = doc({
@@ -643,6 +712,27 @@ describe('validateOutput', () => {
                 expect(hits[0].message).toContain('`<img src="http://example.com/a.png">` loads over plain http')
                 expect(hits[1].message).toContain('`<form action="http://example.com/send">` sends its data over plain http')
                 expect(hits[1].message).toContain('Art. 32 DSGVO')
+            })
+
+            it('covers <embed>, <object> and <track>, but not scripts that never run', async () => {
+                const hits = await check('privacy-insecure', doc({
+                    head: [
+                        '<title>T</title>',
+                        '<script type="text/plain" src="http://example.com/inert.js"></script>',
+                    ],
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<embed src="http://example.com/a.swf">',
+                        '<object data="http://example.com/a.pdf"></object>',
+                        '<video src="/v.mp4"><track src="http://example.com/v.vtt"></video>',
+                        '</main>',
+                    ],
+                }))
+                expect(hits.map((h) => h.message.split(' loads ')[0])).toEqual([
+                    '`<embed src="http://example.com/a.swf">`',
+                    '`<object data="http://example.com/a.pdf">`',
+                    '`<track src="http://example.com/v.vtt">`',
+                ])
             })
 
             it('stays silent on https, relative URLs and plain http links', async () => {
