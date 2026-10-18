@@ -182,26 +182,42 @@ const ALLOW_HOST =
     'list the host under `privacy.allowed_hosts` in config/validate.yaml once ' +
     'it is accounted for'
 
-function thirdPartyMessage(host) {
+// Elements plugin-consent can hold back until the visitor agrees (its
+// ROADMAP, "Markup contract"): `<source>`/`<track>` only inside gated media.
+// `img`, `picture > source`, `link` and CSS are not gated by design.
+const GATEABLE = ['script', 'iframe', 'embed', 'object', 'video', 'audio']
+const isGateable = (el) => GATEABLE.includes(el.name) ||
+    (['source', 'track'].includes(el.name) &&
+        ['video', 'audio'].includes(el.parent?.name))
+
+// How to hold a gateable element back until the visitor agrees.
+const GATE =
+    'gate the element with `data-consent` (the markup of ' +
+    '@nera-static/plugin-consent)'
+
+// `gateable`: the host's first use is an element that can be consent-gated.
+function thirdPartyMessage(host, gateable) {
     const known = KNOWN_HOSTS.find((k) =>
         k.domains.some((d) => host === d || host.endsWith(`.${d}`)))
     if (known) {
+        const gate = gateable ? `, e.g. ${GATE}` : ''
         return `loads ${known.what} from ${host} — a third-party request that ` +
-            `sends the visitor's IP address; ${known.note}, or ${ALLOW_HOST}`
+            `sends the visitor's IP address; ${known.note}${gate}, or ${ALLOW_HOST}`
     }
+    const gate = gateable ? `, ${GATE} so it loads only after the visitor agrees` : ''
     return `loads ${host} — a third-party request that sends the visitor's IP ` +
-        'address; self-host the resource, or name the host in the privacy ' +
-        `policy and ${ALLOW_HOST} (Art. 6 DSGVO)`
+        `address; self-host the resource${gate}, or name the host in the ` +
+        `privacy policy and ${ALLOW_HOST} (Art. 6 DSGVO)`
 }
 
 // One hit per third-party host — the host is what receives the IP address —
-// at its first use. `uses` is `[{ url, line }]` in order.
+// at its first use. `uses` is `[{ url, line, gateable }]` in order.
 function thirdPartyHits(uses, site) {
     const hits = new Map()
-    for (const { url, line } of uses) {
+    for (const { url, line, gateable = false } of uses) {
         const host = hostOf(url)
         if (!isThirdParty(host, site) || hits.has(host)) continue
-        hits.set(host, { line, message: thirdPartyMessage(host) })
+        hits.set(host, { line, message: thirdPartyMessage(host, gateable) })
     }
     return [...hits.values()]
 }
@@ -761,7 +777,8 @@ export const OUTPUT_RULES = [
         level: 'warning',
         check({ document, lineOf, site }) {
             return thirdPartyHits(
-                resources(document).map(({ el, url }) => ({ url, line: lineOf(el) })),
+                resources(document).map(({ el, url }) =>
+                    ({ url, line: lineOf(el), gateable: isGateable(el) })),
                 site
             )
         },

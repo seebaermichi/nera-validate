@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     as resources, so `privacy-third-party` and `privacy-insecure` report them
     like an `<iframe>` or `<video>`. Sites with such elements may see new
     warnings.
+-   `privacy-third-party` adds a consent hint when a host's first use in a
+    file is an element `@nera-static/plugin-consent` can gate (`script`,
+    `iframe`, `embed`, `object`, `video`, `audio`, and `source`/`track` inside
+    `video`/`audio`): gate the element with `data-consent`. Images, `<link>`s,
+    `picture > source` and CSS keep the previous message. A host whose first
+    use differs between pages now collapses into two findings, one per
+    message.
 
 ### Fixed
 

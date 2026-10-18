@@ -685,6 +685,58 @@ describe('validateOutput', () => {
                 ])
             })
 
+            it('adds the consent hint when a host\'s first use can be consent-gated', async () => {
+                const gate = 'gate the element with `data-consent`'
+                const hits = await check('privacy-third-party', doc({
+                    head: [
+                        '<title>T</title>',
+                        '<link rel="stylesheet" href="https://css.example/a.css">',
+                        '<script src="https://script.example/a.js"></script>',
+                    ],
+                    body: [
+                        '<main><h1>Hi</h1>',
+                        '<img src="https://img.example/a.png" alt="">',
+                        '<picture><source srcset="https://picture.example/a.avif"><img src="/a.png" alt=""></picture>',
+                        '<iframe src="https://www.youtube.com/embed/abc"></iframe>',
+                        '<embed src="https://embed.example/a.swf">',
+                        '<object data="https://object.example/a.pdf"></object>',
+                        '<video poster="https://video.example/p.jpg"></video>',
+                        '<audio><source src="https://audio.example/a.mp3"></audio>',
+                        '<video><track kind="captions" src="https://track.example/v.vtt"></video>',
+                        // first use decides: an img, then a script on the same host
+                        '<img src="https://both.example/a.png" alt="">',
+                        '<script src="https://both.example/a.js"></script>',
+                        '</main>',
+                    ],
+                }))
+                expect(hits.map((h) => [h.message.split(' — ')[0], h.message.includes(gate)])).toEqual([
+                    ['loads css.example', false],
+                    ['loads script.example', true],
+                    ['loads img.example', false],
+                    ['loads picture.example', false],
+                    ['loads a YouTube embed from www.youtube.com', true],
+                    ['loads embed.example', true],
+                    ['loads object.example', true],
+                    ['loads video.example', true],
+                    ['loads audio.example', true],
+                    ['loads track.example', true],
+                    ['loads both.example', false],
+                ])
+                expect(hits[4].message).toContain(
+                    'consider a click-to-load placeholder (Art. 6 DSGVO, § 25 TDDDG), ' +
+                    'e.g. gate the element with `data-consent` (the markup of ' +
+                    '@nera-static/plugin-consent), or list the host')
+            })
+
+            it('gives no consent hint for CSS url() and @import', async () => {
+                await buildSite()
+                await write('public/css/site.css',
+                    '@import "https://css.example/a.css";\n.a { background: url(https://img.example/a.png); }\n')
+                const hits = thirdParty()
+                expect(hits).toHaveLength(2)
+                for (const h of hits) expect(h.message).not.toContain('data-consent')
+            })
+
             it('collapses the same template resource across pages', async () => {
                 await buildSite()
                 const html = doc({
@@ -1210,9 +1262,12 @@ describe('validateOutput', () => {
                 'consider self-hosting the fonts (cf. LG München I, 3 O 17493/20), or list the host under `privacy.allowed_hosts` in config/validate.yaml'],
             ['privacy-third-party, Tag Manager', 'privacy-third-party',
                 { 'public/index.html': page().replace('<title>', '<script src="https://www.googletagmanager.com/gtag/js"></script><title>') },
-                'load it only after the visitor agrees, or list the host under `privacy.allowed_hosts`'],
-            ['privacy-third-party, another host', 'privacy-third-party',
+                'load it only after the visitor agrees, e.g. gate the element with `data-consent` (the markup of @nera-static/plugin-consent), or list the host under `privacy.allowed_hosts`'],
+            ['privacy-third-party, another host, gateable', 'privacy-third-party',
                 { 'public/index.html': page().replace('<title>', '<script src="https://cdn.example.org/a.js"></script><title>') },
+                'self-host the resource, gate the element with `data-consent` (the markup of @nera-static/plugin-consent) so it loads only after the visitor agrees, or name the host in the privacy policy and list the host under `privacy.allowed_hosts`'],
+            ['privacy-third-party, another host, not gateable', 'privacy-third-party',
+                { 'public/index.html': page().replace('<title>', '<link rel="icon" href="https://cdn.example.org/f.svg"><title>') },
                 'self-host the resource, or name the host in the privacy policy and list the host under `privacy.allowed_hosts`'],
             ['privacy-storage', 'privacy-storage', {
                 'config/validate.yaml': optIn('privacy-storage'),

@@ -483,14 +483,15 @@ run is not proof of compliance.
    - `thirdPartyMessage(host, gateable)` / `thirdPartyHits`: one finding per
      host per file at its first use, unchanged; `gateable` is true when that
      first use is a gateable element (the list in the rule table). The
-     messages then gain one clause, `CONSENT` = "gate the element behind
-     consent with `data-consent` markup (as `@nera-static/plugin-consent`
-     writes it)":
+     messages then gain one clause, `GATE` = "gate the element with
+     `data-consent` (the markup of @nera-static/plugin-consent)":
      - known host: `loads <what> from <host> — a third-party request that
-       sends the visitor's IP address; <note>, <CONSENT>, or <ALLOW_HOST>`
+       sends the visitor's IP address; <note>, e.g. <GATE>, or <ALLOW_HOST>`
+       ("e.g.", because the gate is one way to do what the note advises)
      - other host: `loads <host> — a third-party request that sends the
-       visitor's IP address; self-host the resource, <CONSENT>, or name the
-       host in the privacy policy and <ALLOW_HOST> (Art. 6 DSGVO)`
+       visitor's IP address; self-host the resource, <GATE> so it loads only
+       after the visitor agrees, or name the host in the privacy policy and
+       <ALLOW_HOST> (Art. 6 DSGVO)`
 
      Not gateable (`img`, `link`, `picture > source`, CSS): the messages stay
      as released.
