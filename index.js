@@ -113,7 +113,8 @@ function mostUsed(counts) {
  *   - the configured theme resolves (theme-unresolved)
  *   - each page's frontmatter parses (yaml-parse)
  *   - each page declares `layout` (layout-missing — a warning: the build would
- *     silently skip the page)
+ *     silently skip the page; `type: stack` pages of @nera-static/plugin-stacks
+ *     are exempt, they have no layout on purpose)
  *   - the layout resolves through the theme-aware view chain (layout-unresolved)
  *   - every include/extends in the reachable pug graph resolves (include-unresolved)
  *   - no `nera new` starter template hides a theme file of the same name
@@ -200,6 +201,9 @@ export function validateSite({ cwd = process.cwd() } = {}) {
         }
 
         if (!meta.layout) {
+            // A plugin-stacks fragment is layout-less on purpose: the plugin
+            // exposes it as `app.stacks` for other pages to embed.
+            if (meta.type === 'stack') continue
             const finding = {
                 file: rel(cwd, abs),
                 line: null,

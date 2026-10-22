@@ -334,6 +334,92 @@ describe('validateSite', () => {
         })
     })
 
+    describe('stack pages (type: stack)', () => {
+        const stack = (extra = '') =>
+            `---\ntype: stack\nslug: home\ntitle: Intro\n${extra}---\nA section.\n`
+
+        it('reports no layout-missing for a stack page without a layout', async () => {
+            await buildValidSite()
+            await fs.writeFile(path.join(cwd, 'pages', 'intro.md'), stack())
+            expect(validateSite({ cwd })).toEqual([])
+        })
+
+        it('still warns on a sibling page without type or layout, message unchanged', async () => {
+            await buildValidSite()
+            await fs.writeFile(path.join(cwd, 'pages', 'intro.md'), stack())
+            await fs.writeFile(
+                path.join(cwd, 'pages', 'draft.md'),
+                '---\ntitle: Draft\n---\n'
+            )
+            const results = validateSite({ cwd })
+            expect(results).toEqual([{
+                file: 'pages/draft.md',
+                line: null,
+                severity: 'warning',
+                rule: 'layout-missing',
+                message:
+                    'page has no `layout` — the build skips it silently; add ' +
+                    '`layout: pages/default.pug` to its frontmatter (a template in ' +
+                    'theme/views), or, if it has none on purpose (a fragment or ' +
+                    'draft), add `ignore: { layout-missing: [pages/draft.md] }` ' +
+                    'to config/validate.yaml',
+            }])
+        })
+
+        it('validates a stack page that has a layout like any page', async () => {
+            await buildValidSite()
+            await fs.writeFile(
+                path.join(cwd, 'pages', 'intro.md'),
+                stack('layout: pages/missing.pug\n')
+            )
+            const unresolved = validateSite({ cwd })
+            expect(unresolved.map((r) => [r.rule, r.file])).toEqual([
+                ['layout-unresolved', 'pages/intro.md'],
+            ])
+
+            await fs.writeFile(
+                path.join(cwd, 'pages', 'intro.md'),
+                stack('layout: pages/section.pug\n')
+            )
+            await fs.writeFile(
+                path.join(cwd, 'theme', 'views', 'pages', 'section.pug'),
+                'include ../partials/missing\n'
+            )
+            const include = validateSite({ cwd })
+            expect(include.map((r) => [r.rule, r.file])).toEqual([
+                ['include-unresolved', 'theme/views/pages/section.pug'],
+            ])
+        })
+
+        it('stack layout counts toward the layout-missing example', async () => {
+            await buildValidSite()
+            for (const name of ['a', 'b']) {
+                await fs.writeFile(
+                    path.join(cwd, 'pages', `${name}.md`),
+                    stack('layout: layouts/layout.pug\n')
+                )
+            }
+            await fs.writeFile(path.join(cwd, 'pages', 'draft.md'), '---\ntitle: x\n---\n')
+            const finding = validateSite({ cwd }).find((r) => r.rule === 'layout-missing')
+            expect(finding.message).toContain('add `layout: layouts/layout.pug`')
+        })
+
+        it.each(['Stack', 'stacks', 'stack '])(
+            'matches `type: stack` exactly — %j still warns',
+            async (type) => {
+                await buildValidSite()
+                await fs.writeFile(
+                    path.join(cwd, 'pages', 'intro.md'),
+                    `---\ntype: "${type}"\n---\n`
+                )
+                expect(
+                    validateSite({ cwd }).filter((r) => r.rule === 'layout-missing')
+                        .map((r) => r.file)
+                ).toEqual(['pages/intro.md'])
+            }
+        )
+    })
+
     describe('messages', () => {
         // Every source-pass message says what to do: right after the ` — `
         // that ends the "what", or after a later `; `, an imperative from this

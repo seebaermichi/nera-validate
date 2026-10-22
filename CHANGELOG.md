@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-10-22
+
+### Fixed
+
+-   `layout-missing` no longer warns on pages with `type: stack`. Those are
+    the sections of `@nera-static/plugin-stacks`, which have no `layout` on
+    purpose: the plugin exposes them as `app.stacks` for other pages and
+    layouts to embed, and the build does not publish them alone. A stack page
+    with a `layout` is still checked like any page. Sites that silenced these
+    warnings with an `ignore: { layout-missing: […] }` entry can drop it.
+
 ## [1.6.0] - 2026-10-18
 
 ### Added
