@@ -147,6 +147,11 @@ fragments and drafts have no `layout` on purpose and filled every
 `nera validate` run with `layout-missing` warnings. Rejected: honouring
 frontmatter `validate_ignore` in `validateSite` — one config entry per folder
 beats a line in each of 80 files, and every new fragment would need it.
+Since 1.6.1 (2026-10-22) `layout-missing` skips pages with exactly
+`type: stack` without an entry: `@nera-static/plugin-stacks` tells users to
+leave its sections layout-less, and nera.js.org needed an `ignore:` entry for
+12 such warnings from one stack group. The match mirrors the plugin's own
+filter; whether the plugin is installed is not checked.
 
 ### Parser
 

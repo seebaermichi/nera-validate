@@ -65,7 +65,7 @@ or a `; ` — what to do about it, so it is actionable without this README.
 |---|---|---|
 | `yaml-parse` | error | `config/app.yaml` or a page's frontmatter does not parse |
 | `theme-unresolved` | error | a configured `theme:` cannot be resolved |
-| `layout-missing` | warning | a page has no `layout` — the build would skip it |
+| `layout-missing` | warning | a page has no `layout` — the build would skip it (not reported for `type: stack` pages) |
 | `layout-unresolved` | error | the `layout` does not resolve in the view/theme chain |
 | `include-unresolved` | error | an `include`/`extends` in the pug graph does not resolve |
 | `theme-shadowed` | warning | a `nera new` starter template hides the configured theme's file of the same name |
@@ -85,7 +85,10 @@ checked.
 
 Some Markdown files have no `layout` on purpose — content fragments another
 page pulls in, drafts — and `layout-missing` would warn about each of them on
-every run. List them under `ignore` in `config/validate.yaml`:
+every run. Stack pages are the exception: a page whose frontmatter sets exactly
+`type: stack` (the sections `@nera-static/plugin-stacks` collects) never gets
+`layout-missing`, whether or not the plugin is installed, so it needs no entry. List the
+others under `ignore` in `config/validate.yaml`:
 
 ```yaml
 ignore:
