@@ -152,13 +152,8 @@ export function validateSite({ cwd = process.cwd() } = {}) {
             line: null,
             severity: 'error',
             rule: 'theme-unresolved',
-            // Core's "views does not exist" text has no fix of its own; the
-            // others ("Run: npm install …", "Update the generator …") do.
-            message: / does not exist$/.test(model.themeError)
-                ? `${model.themeError} — fix \`theme:\` in ${appYaml} (or ` +
-                  'NERA_THEME) to name a theme folder that has a `views/` ' +
-                  'folder, or remove it to build without a theme'
-                : model.themeError,
+            // Core's text already reads `<what> — <what to do>` (core 4.18.1).
+            message: model.themeError,
         })
     }
 

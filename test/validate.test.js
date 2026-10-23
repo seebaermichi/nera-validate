@@ -424,7 +424,7 @@ describe('validateSite', () => {
         // Every source-pass message says what to do: right after the ` — `
         // that ends the "what", or after a later `; `, an imperative from this
         // list starts the fix. A bare "x is wrong" message fails this.
-        const FIX = / — (?:.*?; )?(?:add|create|fix|quote|delete|remove|use|write|put|list|set|run|install|update)\b/
+        const FIX = / — (?:.*?; )?(?:add|create|fix|quote|delete|remove|use|write|put|list|set|run|install|update|point)\b/
 
         const write = async (rel, content) => {
             const abs = path.join(cwd, rel)
@@ -501,16 +501,23 @@ describe('validateSite', () => {
             expect(finding.message).toContain('fix the YAML at that line')
         })
 
-        it('theme-unresolved adds a fix only where core\'s text has none', async () => {
+        it('theme-unresolved passes core\'s text through, with its fix once', async () => {
+            const dashes = (message) => message.split(' — ').length - 1
+
             await buildValidSite()
             await write('config/app.yaml', 'name: Test\ntheme: ./missing-theme\n')
             const local = validateSite({ cwd }).find((r) => r.rule === 'theme-unresolved')
-            expect(local.message).toContain('does not exist — fix `theme:` in config/app.yaml')
+            expect(local.message).toContain(
+                'has no views/ folder — point `theme:` in config/app.yaml'
+            )
+            expect(dashes(local.message)).toBe(1)
 
             await write('config/app.yaml', 'name: Test\ntheme: no-such-theme-xyz\n')
             const pkg = validateSite({ cwd }).find((r) => r.rule === 'theme-unresolved')
-            expect(pkg.message).toContain('npm install @nera-static/theme-no-such-theme-xyz')
-            expect(pkg.message).not.toContain('fix `theme:`')
+            expect(pkg.message).toContain(
+                'run `npm install @nera-static/theme-no-such-theme-xyz`'
+            )
+            expect(dashes(pkg.message)).toBe(1)
         })
 
         it('layout-missing names the most-used layout and the ignore entry', async () => {

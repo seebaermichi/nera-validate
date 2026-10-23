@@ -1,6 +1,6 @@
 {
     "name": "@nera-static/validate",
-    "version": "1.6.1",
+    "version": "1.6.2",
     "description": "Validate a Nera site the way the build sees it — layouts and includes resolve (theme-aware), YAML parses, required frontmatter present — with structured results shared by the CLI and the Nera Pro platform",
     "type": "module",
     "main": "./index.js",
@@ -46,7 +46,7 @@
         "access": "public"
     },
     "dependencies": {
-        "@nera-static/core": "^4.18.0",
+        "@nera-static/core": "^4.18.1",
         "domutils": "^4.0.2",
         "htmlparser2": "^12.0.0",
         "yaml": "^2.4.1"
