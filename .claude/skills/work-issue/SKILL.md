@@ -155,25 +155,29 @@ issues for defects the work itself surfaced. A follow-up issue is the exception 
 has to earn its place.
 
 If `bash .claude/scripts/issue-loop.sh triaged <id>` exits 0, the triage already
-ran — and `phase` printing `done` means its fix steps are approved too. Go to Step 8
-and offer any carry-forward that is not in the triage table as a `file` candidate
-there — a browser test re-run after the fix steps included. There is never a second
-triage round.
+ran — and `phase` printing `done` means its fix steps are approved too. Go to Step 8;
+it says what happens to a carry-forward that is not in the triage table (a browser
+test re-run after the fix steps included). There is never a second triage round.
 
 Otherwise collect the list — every item, from the plan's cut scope and every report
 and review, one per line with its source:
 
 ```bash
 bash .claude/scripts/issue-loop.sh carry-forwards <id>
+bash .claude/scripts/snagio pull --status=open --status=in_progress --json
 ```
 
 1. **Clean the list before anyone sees it.** Merge duplicates (two reviews of one
    step logging the same finding is one item; three findings in one file are one fix)
-   and **check each against the code on the branch now**. Whatever a later step
-   already fixed, whatever is a duplicate, is already filed on the board, or is owned
-   by another open issue **leaves the list** — it never becomes a table row. It gets
-   one summary line under the table, ids or `file:line` only:
-   `Already done / elsewhere: 5 fixed by later steps (…), 1 filed as <id>, 1 owned by <id>.`
+   and **check each against the code on the branch now and against the board you
+   just pulled** — never from memory. Whatever a later step already fixed, whatever
+   is a duplicate, is already filed, or is owned by another open issue **leaves the
+   list** — it never becomes a table row. An item is owned when an open issue's title
+   or description covers it, and that includes **behaviour a planned issue will
+   build**: in a young app most of what a walkthrough misses is a later task's
+   feature, not a defect of this one. It gets one summary line under the table, ids
+   or `file:line` only:
+   `Already done / elsewhere: 5 fixed by later steps (…), 1 filed as <id>, 2 owned by <id>.`
    The table holds only what still needs work.
 2. **Classify** what is left. There are two dispositions:
    - `fix` — the default, for every item this issue surfaced: a defect, a security
@@ -241,11 +245,23 @@ Perform the reconciliation steps listed under `## Reconciliation steps` in
 `.claude/issue-conventions.md` (e.g. version bump, changelog entry, docs reindex).
 If that section is empty, skip this.
 
+Then run the command under `## Static analysis` over the whole project, after the
+reconciliation edits, and quote its result line. The issue is resolved only when it is
+green: fix every error at its cause (no baseline entry, no ignore comment, no widened
+type), commit the fix with the reconciliation edits, and run it again. A command of
+`none — <reason>` is skipped with that reason quoted. If the section is missing or still
+reads `- Command: …`, do not resolve: ask the user for the command and add the section
+to `.claude/issue-conventions.md` first.
+
 Offer the `file` items — usually none — to the user as candidates for `/issue`, one
-line each with its reason (size or separate feature). A carry-forward the fix steps
-logged is offered only if it meets the same bar; anything smaller is named in one
-line, so the user can have it fixed before the issue is resolved. Do not implement
-any of them.
+line each with its reason (size or separate feature). Do not implement any of them.
+
+A carry-forward the fix steps logged after the triage gets no second triage and no
+question. Check it against a fresh `snagio pull` (as in Step 7, point 1): what an open
+issue owns or will build is dropped. Offer one as an `/issue` candidate only if it is
+a defect in what this issue's acceptance criteria promise and no open issue covers
+it. Everything else is named in **one** summary line (`Noted, not filed: 8 — …`) and
+the issue is resolved.
 
 ## Step 9 — Resolve and disarm
 
