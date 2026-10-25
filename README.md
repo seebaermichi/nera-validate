@@ -65,8 +65,9 @@ or a `; ` — what to do about it, so it is actionable without this README.
 |---|---|---|
 | `yaml-parse` | error | `config/app.yaml` or a page's frontmatter does not parse |
 | `theme-unresolved` | error | a configured `theme:` cannot be resolved |
-| `layout-missing` | warning | a page has no `layout` — the build would skip it (not reported for `type: stack` pages) |
+| `layout-missing` | warning | a page has no `layout` — the build would skip it (not reported for `type: stack` pages); on line 1, the opening `---`, when the page has frontmatter |
 | `layout-unresolved` | error | the `layout` does not resolve in the view/theme chain |
+| `date-invalid` | warning | a page's `date` or `createdAt` does not read as a date (`25.10.2026`, `2026-13-45`) — the build would order and print the page by a bogus date; write `YYYY-MM-DD` |
 | `include-unresolved` | error | an `include`/`extends` in the pug graph does not resolve |
 | `theme-shadowed` | warning | a `nera new` starter template hides the configured theme's file of the same name |
 

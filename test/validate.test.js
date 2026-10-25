@@ -63,6 +63,19 @@ describe('validateSite', () => {
         expect(hasErrors(results)).toBe(false)
     })
 
+    it('anchors layout-missing to the opening fence, or nowhere without one', async () => {
+        await buildValidSite()
+        await fs.writeFile(
+            path.join(cwd, 'pages', 'draft.md'),
+            '---\ntitle: Draft\n---\n# no layout here\n'
+        )
+        await fs.writeFile(path.join(cwd, 'pages', 'bare.md'), '# no frontmatter\n')
+        const lines = Object.fromEntries(validateSite({ cwd })
+            .filter((r) => r.rule === 'layout-missing')
+            .map((r) => [r.file, r.line]))
+        expect(lines).toEqual({ 'pages/draft.md': 1, 'pages/bare.md': null })
+    })
+
     it('errors when the layout cannot be resolved, at the layout line', async () => {
         await buildValidSite()
         await fs.writeFile(
@@ -354,7 +367,7 @@ describe('validateSite', () => {
             const results = validateSite({ cwd })
             expect(results).toEqual([{
                 file: 'pages/draft.md',
-                line: null,
+                line: 1,
                 severity: 'warning',
                 rule: 'layout-missing',
                 message:
@@ -420,6 +433,65 @@ describe('validateSite', () => {
         )
     })
 
+    describe('date-invalid', () => {
+        const page = (frontmatter) =>
+            `---\nlayout: pages/default.pug\ntitle: Post\n${frontmatter}---\n# Post\n`
+
+        async function dated(frontmatter) {
+            await buildValidSite()
+            await fs.writeFile(path.join(cwd, 'pages', 'post.md'), page(frontmatter))
+            return validateSite({ cwd })
+        }
+
+        it('warns on a date that does not parse, on its line', async () => {
+            const results = await dated('date: 25.10.2026\n')
+            expect(results).toEqual([{
+                file: 'pages/post.md',
+                line: 4,
+                severity: 'warning',
+                rule: 'date-invalid',
+                message:
+                    '`date` "25.10.2026" is not a date — pages ordered or ' +
+                    'printed by date get it wrong; write it as `YYYY-MM-DD`, ' +
+                    'e.g. `date: 2026-10-25`',
+            }])
+            expect(hasErrors(results)).toBe(false)
+        })
+
+        it('checks createdAt too, each key on its own line', async () => {
+            const results = await dated('createdAt: soon\ndate: [2026]\n')
+            expect(results.map((r) => [r.rule, r.line, r.message.split(' — ')[0]]))
+                .toEqual([
+                    ['date-invalid', 4, '`createdAt` "soon" is not a date'],
+                    ['date-invalid', 5, '`date` [2026] is not a date'],
+                ])
+        })
+
+        it('catches a month or day out of range, which a YAML timestamp would roll over', async () => {
+            const results = await dated('date: 2026-13-45\n')
+            expect(results.map((r) => r.rule)).toEqual(['date-invalid'])
+        })
+
+        it.each([
+            ['an unquoted YAML date', 'date: 2026-10-25\n'],
+            ['a quoted ISO timestamp', 'createdAt: "2026-10-25T10:00:00+02:00"\n'],
+            ['a date with a time', 'date: 2026-10-25 10:00\n'],
+            ['an empty value (core falls back to the file date)', 'date:\ncreatedAt: ""\n'],
+        ])('reports nothing for %s', async (_, frontmatter) => {
+            expect(await dated(frontmatter)).toEqual([])
+        })
+
+        it('is silenced by ignore in config/validate.yaml', async () => {
+            await buildValidSite()
+            await fs.writeFile(
+                path.join(cwd, 'config', 'validate.yaml'),
+                'ignore:\n  date-invalid: [pages/post.md]\n'
+            )
+            await fs.writeFile(path.join(cwd, 'pages', 'post.md'), page('date: someday\n'))
+            expect(validateSite({ cwd })).toEqual([])
+        })
+    })
+
     describe('messages', () => {
         // Every source-pass message says what to do: right after the ` — `
         // that ends the "what", or after a later `; `, an imperative from this
@@ -451,6 +523,8 @@ describe('validateSite', () => {
                 { 'config/app.yaml': 'name: Test\ntheme: ./missing-theme\n' }],
             ['layout-missing', 'layout-missing', 'pages/draft.md',
                 { 'pages/draft.md': '---\ntitle: Draft\n---\n' }],
+            ['date-invalid', 'date-invalid', 'pages/post.md',
+                { 'pages/post.md': '---\nlayout: pages/default.pug\ndate: someday\n---\n' }],
             ['layout-unresolved', 'layout-unresolved', 'pages/index.md',
                 { 'pages/index.md': '---\nlayout: pages/missing.pug\n---\n' }],
             ['include-unresolved', 'include-unresolved', 'theme/views/layouts/layout.pug',

@@ -103,6 +103,35 @@ function mostUsed(counts) {
     return best
 }
 
+// The frontmatter keys core reads a page's date from (`createdAt`, else `date`).
+const DATE_KEYS = ['createdAt', 'date']
+
+// `date-invalid`: a date key whose value `new Date()` cannot read. Core passes
+// it on as `meta.createdAt` anyway, so a page list or feed orders and prints
+// the page by a bogus date. `meta` is parsed without the timestamp tag, so an
+// unquoted date is still the text the author wrote; that also catches
+// `2026-13-45`, which the tag would roll over into a real date. An empty value
+// is no finding: core falls back to the file date, as for a missing key.
+function collectDateFindings(meta, raw, file, findings) {
+    for (const key of DATE_KEYS) {
+        const value = meta[key]
+        if (value === undefined || value === null || value === '') continue
+        const readable = (value instanceof Date ||
+            ['string', 'number'].includes(typeof value)) &&
+            !Number.isNaN(new Date(value).getTime())
+        if (readable) continue
+        findings.push({
+            file,
+            line: frontmatterKeyLine(raw, key),
+            severity: 'warning',
+            rule: 'date-invalid',
+            message: `\`${key}\` ${JSON.stringify(value)} is not a date — ` +
+                'pages ordered or printed by date get it wrong; write it as ' +
+                `\`YYYY-MM-DD\`, e.g. \`${key}: 2026-10-25\``,
+        })
+    }
+}
+
 /**
  * Validate a Nera site the way the build will see it. Pure and read-only — it
  * renders nothing and writes nothing. The Nera CLI (`nera validate`) and the
@@ -112,6 +141,8 @@ function mostUsed(counts) {
  *   - config/app.yaml parses (yaml-parse)
  *   - the configured theme resolves (theme-unresolved)
  *   - each page's frontmatter parses (yaml-parse)
+ *   - a `date` or `createdAt` value reads as a date (date-invalid — a warning:
+ *     the page would be ordered and printed by a bogus date)
  *   - each page declares `layout` (layout-missing — a warning: the build would
  *     silently skip the page; `type: stack` pages of @nera-static/plugin-stacks
  *     are exempt, they have no layout on purpose)
@@ -195,13 +226,17 @@ export function validateSite({ cwd = process.cwd() } = {}) {
             }
         }
 
+        collectDateFindings(meta, raw, rel(cwd, abs), findings)
+
         if (!meta.layout) {
             // A plugin-stacks fragment is layout-less on purpose: the plugin
             // exposes it as `app.stacks` for other pages to embed.
             if (meta.type === 'stack') continue
             const finding = {
                 file: rel(cwd, abs),
-                line: null,
+                // The opening `---`: the key is missing, so the fence is the
+                // closest line that belongs to the frontmatter.
+                line: fm ? 1 : null,
                 severity: 'warning',
                 rule: 'layout-missing',
                 message: '',

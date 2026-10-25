@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-10-25
+
+### Added
+
+-   Source rule `date-invalid` (warning): a page whose `date` or `createdAt`
+    frontmatter value does not read as a date, such as `25.10.2026` or
+    `2026-13-45`. Core passes it on as `meta.createdAt` all the same, so page
+    lists, feeds and printed dates order and show the page by a bogus date.
+    The finding sits on that key's line. An empty value is no finding (core
+    falls back to the file date), and `ignore: { date-invalid: […] }` in
+    `config/validate.yaml` silences it like any rule.
+
+### Changed
+
+-   `layout-missing` now reports line 1, the opening `---`, for a page that
+    has frontmatter, instead of `null`. A page without frontmatter still
+    reports `null`. Tools that place findings by line, such as an editor,
+    can now show it inside the page's frontmatter.
+
 ## [1.6.2] - 2026-10-23
 
 ### Changed
