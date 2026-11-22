@@ -465,6 +465,86 @@ function* textNodes(node) {
     }
 }
 
+// ── Search-engine helpers ───────────────────────────────────────────────────
+
+const JSONLD_TAG = '`<script type="application/ld+json">`'
+
+// A JSON-LD block: the type, trimmed and case-insensitive like `isJsType`,
+// without parameters.
+const isJsonLd = (el) =>
+    el.name === 'script' && attr(el, 'type').toLowerCase() === 'application/ld+json'
+
+const hasContext = (node) =>
+    node !== null && typeof node === 'object' && !Array.isArray(node) &&
+    node['@context'] != null && node['@context'] !== ''
+
+const CONTEXT = '`"@context": "https://schema.org"`'
+const addContext = `add ${CONTEXT}`
+const ignoredBlock = 'search engines ignore the whole block'
+const whereToFix =
+    'in the layout, or in the page\'s `structured_data` frontmatter'
+
+// `{ offset, message }` for a JSON-LD block's problem, or null when it parses
+// and every top-level node names its `@context`. The text is parsed raw, as
+// the browser and search engines read it: `<script>` content is never
+// entity-decoded, and `\u003c` escapes are JSON's own. `offset` is where in
+// the text a parse error sits (0 when V8 gives no position).
+function jsonLdFinding(code) {
+    if (code.trim() === '') {
+        return {
+            offset: 0,
+            message: `${JSONLD_TAG} is empty — ${ignoredBlock}; fill it ` +
+                'with a JSON-LD object or remove it',
+        }
+    }
+    let data
+    try {
+        data = JSON.parse(code)
+    } catch (error) {
+        const position = /\bat position (\d+)/.exec(error.message)
+        const reason = error.message
+            .replace(/\s*\(line \d+ column \d+\)/, '')
+            .replace(/\s+/g, ' ')
+            .trim()
+        return {
+            offset: position ? Number(position[1]) : 0,
+            message: `${JSONLD_TAG} is not valid JSON (${reason}) — ` +
+                `${ignoredBlock}; fix the JSON at this line ${whereToFix} ` +
+                '(a trailing comma or an unquoted key is the usual cause)',
+        }
+    }
+    if (Array.isArray(data)) {
+        const missing = data
+            .map((node, i) => (hasContext(node) ? null : i + 1))
+            .filter((n) => n !== null)
+        if (missing.length === 0) return null
+        const items = missing.length === 1 ? 'item' : 'items'
+        return {
+            offset: 0,
+            message: `${JSONLD_TAG} array ${items} ${missing.join(', ')} ` +
+                `(counting from 1) ${missing.length === 1 ? 'has' : 'have'} ` +
+                'no `@context` — search engines cannot tell which vocabulary ' +
+                `the types come from and skip ${missing.length === 1 ? 'it' : 'them'}; ` +
+                `${addContext} to each item ${whereToFix}`,
+        }
+    }
+    if (data === null || typeof data !== 'object') {
+        const kind = data === null ? 'null' : `a JSON ${typeof data}`
+        return {
+            offset: 0,
+            message: `${JSONLD_TAG} holds ${kind}, not a JSON-LD object — ` +
+                `${ignoredBlock}; write an object with ${CONTEXT} ${whereToFix}`,
+        }
+    }
+    if (hasContext(data)) return null
+    return {
+        offset: 0,
+        message: `${JSONLD_TAG} has no \`@context\` — search engines cannot ` +
+            'tell which vocabulary its types come from and ignore the block; ' +
+            `${addContext} ${whereToFix}`,
+    }
+}
+
 // The rule catalogue for `validateOutput` (ROADMAP-compliance.md). Each rule
 // gets one parsed page and returns `{ line, message }` hits; the caller adds
 // file, source and the configured severity. Rule ids are stable once released —
@@ -939,6 +1019,24 @@ export const OUTPUT_RULES = [
                 }
             }
             return hits.sort((a, b) => a.line - b.line)
+        },
+    },
+    {
+        id: 'seo-jsonld',
+        level: 'warning',
+        check({ document, lineOf }) {
+            return all(document, isJsonLd).flatMap((script) => {
+                const code = textContent(script)
+                const finding = jsonLdFinding(code)
+                if (!finding) return []
+                // Count from the text's first character, which may sit on a
+                // later line than `<script` when its attributes wrap.
+                const start = lineOf(script.children[0]) ?? lineOf(script)
+                return [{
+                    line: start + code.slice(0, finding.offset).split('\n').length - 1,
+                    message: finding.message,
+                }]
+            })
         },
     },
 ]

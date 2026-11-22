@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2026-11-22
+
+### Added
+
+-   Output rule `seo-jsonld` (warning), the first of a `seo-*` family: every
+    `<script type="application/ld+json">` in the built output must parse as
+    JSON and name its `@context` — on the top-level object, or on each item of
+    a top-level array. An empty block, a parse error (reported at the line of
+    the error inside the block, with the parser's message) and a block that
+    holds no JSON-LD object are findings too. The text is parsed as written,
+    never HTML-decoded; the `\u003c` escapes of
+    `@nera-static/plugin-structured-data` are fine. `nera check` and
+    `nera build --check` get it without a CLI change, and
+    `ignore: { seo-jsonld: […] }` in `config/validate.yaml` silences it like
+    any rule. The schema.org vocabulary is not checked.
+
 ## [1.7.0] - 2026-10-25
 
 ### Added

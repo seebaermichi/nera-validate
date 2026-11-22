@@ -118,7 +118,8 @@ console.log(formatOutputResults(results))
 
 `validateSite` reads the sources; `validateOutput({ cwd, dir = 'public' })`
 reads what the build produced — the HTML, CSS and JavaScript in `public/` — and
-looks for accessibility, privacy and legal-notice problems a parser can decide.
+looks for accessibility, privacy, legal-notice and structured-data problems a
+parser can decide.
 Plugin hooks never see the finished page (the layout's `<html lang>`, navigation,
 footer, loaded scripts and fonts), which is why this lives here and not in a
 plugin. It is read-only and throws "run `nera build` first" when the folder is
@@ -187,6 +188,18 @@ are stable.
 
 `legal-outdated-law` reads the legal pages only, never the whole site — a blog
 post may mention the TTDSG on purpose.
+
+### Search engines — structured data
+
+| rule | finds | reference | default |
+|---|---|---|---|
+| `seo-jsonld` | a `<script type="application/ld+json">` block that is empty or not valid JSON (at the line of the parse error), or whose top-level object — or an item of its top-level array — has no `@context` | [JSON-LD 1.1](https://www.w3.org/TR/json-ld11/) | warning |
+
+A broken block is invisible in the browser, and search engines ignore it
+whole. The block's text is parsed as written: `<script>` content is never
+HTML-decoded, and the `\u003c` escapes `@nera-static/plugin-structured-data`
+writes are JSON's own. Whether the types and properties are valid schema.org is
+not checked.
 
 ### Configuration: `config/validate.yaml`
 

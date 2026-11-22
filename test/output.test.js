@@ -1142,6 +1142,117 @@ describe('validateOutput', () => {
                 expect(results.map((r) => r.rule)).toEqual(['config-invalid', 'config-invalid'])
             })
         })
+
+        describe('seo-jsonld', () => {
+            const ld = (text) => `<script type="application/ld+json">${text}</script>`
+
+            it('warns on a block that is not valid JSON, at the line of the error', async () => {
+                const hits = await check('seo-jsonld', doc({
+                    body: [
+                        '<main><h1>Hi</h1></main>',
+                        '<script type="application/ld+json">',
+                        '{',
+                        '  "@context": "https://schema.org",',
+                        '  "name": "x",',
+                        '}',
+                        '</script>',
+                    ],
+                }))
+                expect(hits).toHaveLength(1)
+                expect(hits[0]).toMatchObject({
+                    file: 'public/index.html',
+                    line: 12,
+                    severity: 'warning',
+                    source: 'pages/index.md',
+                })
+                expect(hits[0].message).toContain(
+                    'is not valid JSON (Expected double-quoted property name in JSON at position 54)')
+                expect(hits[0].message).not.toContain('column')
+                expect(hits[0].message).toContain('search engines ignore the whole block')
+            })
+
+            it('counts from the text when the tag wraps, and from the tag without a position', async () => {
+                const hits = await check('seo-jsonld', doc({
+                    body: [
+                        '<main><h1>Hi</h1></main>',
+                        '<script',
+                        '  type="application/ld+json">{"a": 1,',
+                        '"b": 2} x</script>',
+                        '<script type="application/ld+json">{',
+                        '"a": tru',
+                        '}</script>',
+                    ],
+                }))
+                expect(hits.map((h) => h.line)).toEqual([10, 11])
+                expect(hits[0].message).toContain('Unexpected non-whitespace character after JSON')
+                expect(hits[1].message).toContain('Unexpected token')
+                for (const h of hits) expect(h.message).not.toContain('\n')
+            })
+
+            it('warns on an empty block', async () => {
+                const hits = await check('seo-jsonld', doc({
+                    body: ['<main><h1>Hi</h1></main>', ld(''), ld('\n  \n')],
+                }))
+                expect(hits.map((h) => [h.line, h.message.split(' — ')[0]])).toEqual([
+                    [8, '`<script type="application/ld+json">` is empty'],
+                    [9, '`<script type="application/ld+json">` is empty'],
+                ])
+            })
+
+            it('warns on a parsed block without @context: object, array item, non-object', async () => {
+                const hits = await check('seo-jsonld', doc({
+                    body: [
+                        '<main><h1>Hi</h1></main>',
+                        ld('{"@type": "WebPage", "name": "x"}'),
+                        ld('[{"@context": "https://schema.org", "@type": "A"}, {"@type": "B"}, "c"]'),
+                        ld('"just a string"'),
+                        ld('null'),
+                        ld('{"@context": "", "@type": "A"}'),
+                    ],
+                }))
+                // Identical messages on one page are grouped, so sort by line.
+                hits.sort((a, b) => a.line - b.line)
+                expect(hits.map((h) => [h.line, h.message.split(' — ')[0]])).toEqual([
+                    [8, '`<script type="application/ld+json">` has no `@context`'],
+                    [9, '`<script type="application/ld+json">` array items 2, 3 (counting from 1) have no `@context`'],
+                    [10, '`<script type="application/ld+json">` holds a JSON string, not a JSON-LD object'],
+                    [11, '`<script type="application/ld+json">` holds null, not a JSON-LD object'],
+                    [12, '`<script type="application/ld+json">` has no `@context`'],
+                ])
+                expect(hits[0].message).toContain('add `"@context": "https://schema.org"`')
+            })
+
+            it('accepts valid blocks: escaped plugin output, @graph, arrays, any type casing', async () => {
+                expect(await check('seo-jsonld', doc({
+                    head: [
+                        '<title>T</title>',
+                        // plugin-structured-data escapes <, > and & as \uXXXX
+                        ld('{"@context":"https://schema.org","@type":"WebPage",' +
+                            '"name":"a \\u003c/script\\u003e \\u0026 b"}'),
+                        ld('{"@context": "https://schema.org", "@graph": [' +
+                            '{"@type": "WebSite", "name": "S"}, {"@type": "Person", "name": "P"}]}'),
+                    ],
+                    body: [
+                        '<main><h1>Hi</h1></main>',
+                        ld('[{"@context": "https://schema.org", "@type": "A"}, ' +
+                            '{"@context": {"@vocab": "https://schema.org/"}, "@type": "B"}]'),
+                        '<script type=" Application/LD+JSON ">{"@context": "https://schema.org"}</script>',
+                    ],
+                }))).toEqual([])
+            })
+
+            it('never reads JavaScript or other script types as JSON-LD', async () => {
+                expect(await check('seo-jsonld', doc({
+                    body: [
+                        '<main><h1>Hi</h1></main>',
+                        '<script>{ not json</script>',
+                        '<script type="module">import x from "/x.js"</script>',
+                        '<script type="application/json">{</script>',
+                        '<script type="application/ld+json; charset=utf-8">{</script>',
+                    ],
+                }))).toEqual([])
+            })
+        })
     })
 
     describe('source mapping', () => {
@@ -1320,6 +1431,19 @@ describe('validateOutput', () => {
             const results = validateOutput({ cwd })
             expect(results.map((r) => r.rule)).toEqual(['a11y-html-lang'])
         })
+
+        it('silences seo-jsonld on a listed path', async () => {
+            await buildSite()
+            const broken = page().replace('<title>',
+                '<script type="application/ld+json">{</script><title>')
+            await write('public/index.html', broken)
+            await write('public/x/a.html', broken)
+            await write('config/validate.yaml', 'ignore:\n  seo-jsonld: [public/x]\n')
+            const results = validateOutput({ cwd })
+            expect(results.map((r) => [r.rule, r.file])).toEqual([
+                ['seo-jsonld', 'public/index.html'],
+            ])
+        })
     })
 
     it('formats through the shared formatter', async () => {
@@ -1434,6 +1558,12 @@ describe('validateOutput', () => {
                 { 'public/imprint.html': legalPage }, 'cite the TDDDG instead'],
             ['legal-outdated-law, RStV', 'legal-outdated-law',
                 { 'public/imprint.html': legalPage }, 'cite § 18 MStV instead'],
+            ['seo-jsonld, not valid JSON', 'seo-jsonld',
+                { 'public/index.html': page().replace('<title>', '<script type="application/ld+json">{"a": 1,}</script><title>') },
+                'fix the JSON at this line in the layout, or in the page\'s `structured_data` frontmatter'],
+            ['seo-jsonld, no @context', 'seo-jsonld',
+                { 'public/index.html': page().replace('<title>', '<script type="application/ld+json">{"@type": "WebPage"}</script><title>') },
+                'add `"@context": "https://schema.org"` in the layout, or in the page\'s `structured_data` frontmatter'],
             ['config-invalid, legal not a mapping', 'config-invalid',
                 { 'config/validate.yaml': 'legal: yes\n' },
                 'put `imprint:` and `privacy:` under it'],

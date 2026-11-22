@@ -190,11 +190,11 @@ function collapse(findings) {
 }
 
 /**
- * Check a site's BUILT output for accessibility, privacy and legal-notice
- * problems a parser can decide (ROADMAP-compliance.md). Read-only, like
- * validateSite, but over `dir` (default `public/`) rather than the sources — its
- * HTML, and its CSS and JavaScript for the rules that read them — so it needs a
- * build first and throws when there is no HTML to read.
+ * Check a site's BUILT output for accessibility, privacy, legal-notice and
+ * structured-data problems a parser can decide (ROADMAP-compliance.md).
+ * Read-only, like validateSite, but over `dir` (default `public/`) rather than
+ * the sources — its HTML, and its CSS and JavaScript for the rules that read
+ * them — so it needs a build first and throws when there is no HTML to read.
  *
  * Every rule is a hint and a warning by default; `config/validate.yaml`
  * (`rules: { <id>: error|warning|off }`) promotes or disables rules, names the
