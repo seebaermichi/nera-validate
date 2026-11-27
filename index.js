@@ -4,6 +4,10 @@ import YAML from 'yaml'
 import { resolveSiteModel, resolveEntry } from '@nera-static/core'
 import { extractFrontmatter, frontmatterKeyLine } from './src/frontmatter.js'
 import { collectIncludeFindings } from './src/pug-refs.js'
+import {
+    createPageDataContext,
+    collectPageDataFindings,
+} from './src/page-data.js'
 import { formatResults, formatOutputResults, OUTPUT_NOTE } from './src/format.js'
 import { walkFiles } from './src/walk.js'
 import { validateOutput } from './src/output.js'
@@ -143,6 +147,9 @@ function collectDateFindings(meta, raw, file, findings) {
  *   - each page's frontmatter parses (yaml-parse)
  *   - a `date` or `createdAt` value reads as a date (date-invalid — a warning:
  *     the page would be ordered and printed by a bogus date)
+ *   - a page's `page_data` (@nera-static/plugin-page-data) is a name or a list
+ *     of names (page-data-type), each naming a data file inside the data folder
+ *     (page-data-missing) that parses (page-data-invalid, at the data file)
  *   - each page declares `layout` (layout-missing — a warning: the build would
  *     silently skip the page; `type: stack` pages of @nera-static/plugin-stacks
  *     are exempt, they have no layout on purpose)
@@ -202,6 +209,7 @@ export function validateSite({ cwd = process.cwd() } = {}) {
     // the example, so it is written once every page has been read.
     const layoutCounts = new Map()
     const noLayout = []
+    const pageData = createPageDataContext(model, cwd)
 
     for (const abs of walkFiles(pagesDir, '.md')) {
         const raw = fssync.readFileSync(abs, 'utf-8')
@@ -227,6 +235,7 @@ export function validateSite({ cwd = process.cwd() } = {}) {
         }
 
         collectDateFindings(meta, raw, rel(cwd, abs), findings)
+        collectPageDataFindings(meta, raw, rel(cwd, abs), pageData, findings)
 
         if (!meta.layout) {
             // A plugin-stacks fragment is layout-less on purpose: the plugin
