@@ -149,7 +149,10 @@ function collectDateFindings(meta, raw, file, findings) {
  *     the page would be ordered and printed by a bogus date)
  *   - a page's `page_data` (@nera-static/plugin-page-data) is a name or a list
  *     of names (page-data-type), each naming a data file inside the data folder
- *     (page-data-missing) that parses (page-data-invalid, at the data file)
+ *     (page-data-missing) that parses (page-data-invalid, at the data file);
+ *     on a site with two or more languages, every language map in such a file
+ *     carries each site language (page-data-language — a warning: the plugin
+ *     falls back to `app.lang`)
  *   - each page declares `layout` (layout-missing — a warning: the build would
  *     silently skip the page; `type: stack` pages of @nera-static/plugin-stacks
  *     are exempt, they have no layout on purpose)

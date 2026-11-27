@@ -68,8 +68,20 @@ or a `; ` — what to do about it, so it is actionable without this README.
 | `layout-missing` | warning | a page has no `layout` — the build would skip it (not reported for `type: stack` pages); on line 1, the opening `---`, when the page has frontmatter |
 | `layout-unresolved` | error | the `layout` does not resolve in the view/theme chain |
 | `date-invalid` | warning | a page's `date` or `createdAt` does not read as a date (`25.10.2026`, `2026-13-45`) — the build would order and print the page by a bogus date; write `YYYY-MM-DD` |
+| `page-data-type` | error | a page's `page_data` (`@nera-static/plugin-page-data`) is neither a data file name nor a list of names, or a list entry is no name |
+| `page-data-missing` | error | a name in `page_data` matches no `<data folder>/<name>.yaml` (nor `.yml`), or points outside the data folder (`..`, a leading `/`) — the page would build without that data; at the page's `page_data` line |
+| `page-data-invalid` | error | a data file named in `page_data` is not valid YAML or cannot be read; at the data file and the parser's line, once per file |
+| `page-data-language` | warning | on a site with two or more languages (`lang` plus the keys of `translations` in `config/app.yaml`), a language map in a named data file — a map whose keys are all site languages — lacks one of them (or holds `null` for it), so the plugin falls back to `app.lang`; once per data file, field path (`themes[].audience`) and language, at the first such map |
 | `include-unresolved` | error | an `include`/`extends` in the pug graph does not resolve |
 | `theme-shadowed` | warning | a `nera new` starter template hides the configured theme's file of the same name |
+
+**`page-data-*`.** `@nera-static/plugin-page-data` only warns at build time,
+so a typo in `page_data: themse` would ship a page without its data and exit
+code 0. These checks read the plugin's settings the way it does: the data
+folder is `folders.data` in `config/app.yaml` (default `data`), the
+frontmatter key is `frontmatter_key` in `config/page-data.yaml` (default
+`page_data`). A site whose pages never set the key reads no data file and gets
+no finding.
 
 **`theme-shadowed`.** A site's own views win over its theme's, file by file —
 that is how you override one theme template. But `nera new` scaffolds

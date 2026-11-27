@@ -1,6 +1,6 @@
 import fssync from 'fs'
 import path from 'path'
-import YAML from 'yaml'
+import YAML, { LineCounter, isMap, isScalar, isSeq } from 'yaml'
 import { frontmatterKeyLine } from './frontmatter.js'
 import { yamlParseMessage } from './config.js'
 
@@ -8,8 +8,9 @@ import { yamlParseMessage } from './config.js'
 // (@nera-static/plugin-page-data). The plugin only warns at build time, so a
 // typo ships a page without its data and exit code 0. Its rules are mirrored
 // here, not imported — the plugin is no dependency of the validator — from
-// `nera-plugin-page-data/src/{config,load}.js`: the same name check, `.yaml`
-// tried before `.yml`, the same settings and fallbacks.
+// `nera-plugin-page-data/src/{config,load,lang}.js`: the same name check,
+// `.yaml` tried before `.yml`, the same settings and fallbacks, the same test
+// for a language map.
 
 export const DEFAULT_DATA_FOLDER = 'data'
 export const DEFAULT_FRONTMATTER_KEY = 'page_data'
@@ -19,6 +20,14 @@ const rel = (cwd, abs) => path.relative(cwd, abs).split(path.sep).join('/')
 
 const isPlainObject = (value) =>
     value !== null && typeof value === 'object' && !Array.isArray(value)
+
+// A plain object as YAML produces it — not a class instance such as a `Date`
+// or a `Map` — as the plugin's `src/lang.js` tests it.
+const isPlainData = (value) => {
+    if (value === null || typeof value !== 'object') return false
+    const prototype = Object.getPrototypeOf(value)
+    return prototype === Object.prototype || prototype === null
+}
 
 const isName = (value) => typeof value === 'string' && value.trim() !== ''
 
@@ -57,13 +66,147 @@ export function createPageDataContext(model, cwd) {
     const dataFolder = path.resolve(
         cwd, isName(folder) ? folder.trim() : DEFAULT_DATA_FOLDER
     )
+    const lang = model.appConfig?.lang
     return {
         cwd,
         key: readFrontmatterKey(cwd, model.folders.config),
         dataFolder,
         folderLabel: rel(cwd, dataFolder) || '.',
+        languages: siteLanguages(model.appConfig),
+        fallback: isName(lang) ? lang.trim() : '',
         cache: new Map(),
     }
+}
+
+/**
+ * The languages of a site: `app.lang` plus the keys of `app.translations`,
+ * as the plugin's `siteLanguages` collects them.
+ *
+ * @param {object} [appConfig] the parsed `config/app.yaml`
+ * @returns {Set<string>}
+ */
+export function siteLanguages(appConfig) {
+    const languages = new Set()
+    if (isName(appConfig?.lang)) languages.add(appConfig.lang.trim())
+    if (isPlainData(appConfig?.translations)) {
+        for (const key of Object.keys(appConfig.translations)) {
+            if (isName(key)) languages.add(key.trim())
+        }
+    }
+    return languages
+}
+
+/**
+ * Whether a value is a language map: a non-empty plain object whose keys are
+ * all languages of the site. Mirrors the plugin's `isLanguageMap`.
+ *
+ * @param {unknown} value
+ * @param {Set<string>} languages
+ * @returns {boolean}
+ */
+export function isLanguageMap(value, languages) {
+    if (!isPlainData(value)) return false
+    const keys = Object.keys(value)
+    return keys.length > 0 && keys.every((key) => languages.has(key))
+}
+
+// `null` counts as missing: `de:` with no value is an untranslated field.
+const hasValue = (map, language) =>
+    Object.hasOwn(map, language) && map[language] !== null &&
+    map[language] !== undefined
+
+// The 1-based line of the node at `steps` (map keys and list indices) in a
+// parsed document, or `null` when the path does not lead through plain maps
+// and lists — an alias, a merge or a complex key — rather than a wrong line.
+function lineAt(doc, lineCounter, steps) {
+    let node = doc.contents
+    for (const step of steps) {
+        if (typeof step === 'number' && isSeq(node)) {
+            node = node.items[step]
+        } else if (typeof step === 'string' && isMap(node)) {
+            node = node.items.find((pair) =>
+                isScalar(pair.key) && String(pair.key.value) === step)?.value
+        } else {
+            return null
+        }
+    }
+    if (!isMap(node) || !node.range) return null
+    return lineCounter.linePos(node.range[0]).line
+}
+
+// What a page in `lang` shows where the first map lacking it stands.
+function outcomeOf(map, lang, fallback) {
+    if (lang === fallback) {
+        return `pages in "${lang}" show nothing there, and so does every ` +
+            'language that falls back to it'
+    }
+    if (fallback !== '' && hasValue(map, fallback)) {
+        return `pages in "${lang}" show the "${fallback}" value instead`
+    }
+    return `pages in "${lang}" show nothing there (no ` +
+        `${fallback === '' ? 'app.lang' : `"${fallback}" value`} to fall back to)`
+}
+
+/**
+ * `page-data-language` for one parsed data file: every language map in it
+ * (at any depth, in maps and lists) must carry a value for each language of
+ * the site. One warning per field path and language, list indices collapsed
+ * to `[]` as the plugin does (`themes[].audience`), at the line of the first
+ * map lacking it. Runs only on sites with two or more languages.
+ *
+ * @param {ReturnType<typeof createPageDataContext>} context
+ * @param {string} base the data file's base path (without extension)
+ * @param {{ abs: string, value: unknown, text: string }} result
+ * @param {Array<object>} findings
+ */
+export function collectLanguageFindings(context, base, result, findings) {
+    const { languages, fallback } = context
+    if (languages.size < 2) return
+    const name = path.relative(context.dataFolder, base).split(path.sep).join('/')
+    const file = rel(context.cwd, result.abs)
+    const reported = new Set()
+    let parsed = null
+    const line = (steps) => {
+        if (parsed === null) {
+            const lineCounter = new LineCounter()
+            const doc = YAML.parseDocument(result.text, { lineCounter })
+            parsed = { doc, lineCounter }
+        }
+        return lineAt(parsed.doc, parsed.lineCounter, steps)
+    }
+
+    const walk = (node, at, steps) => {
+        if (Array.isArray(node)) {
+            node.forEach((item, i) => walk(item, `${at}[]`, [...steps, i]))
+            return
+        }
+        if (!isPlainData(node)) return
+        if (isLanguageMap(node, languages)) {
+            for (const lang of languages) {
+                if (hasValue(node, lang) || reported.has(`${at}\0${lang}`)) continue
+                reported.add(`${at}\0${lang}`)
+                findings.push({
+                    file,
+                    line: line(steps),
+                    severity: 'warning',
+                    rule: 'page-data-language',
+                    message: `\`${at}\` has no "${lang}" value — ` +
+                        `${outcomeOf(node, lang, fallback)}; add ` +
+                        `\`${lang}: …\` to this map`,
+                })
+            }
+            // A translation may hold language maps of its own.
+            for (const [key, child] of Object.entries(node)) {
+                walk(child, at, [...steps, key])
+            }
+            return
+        }
+        for (const [key, child] of Object.entries(node)) {
+            walk(child, at === '' ? key : `${at}.${key}`, [...steps, key])
+        }
+    }
+
+    walk(result.value, name, [])
 }
 
 /**
@@ -102,7 +245,7 @@ function readDataFile(base) {
             return { ok: false, reason: 'unreadable', abs, message: err.message }
         }
         try {
-            return { ok: true, abs, value: YAML.parse(text) }
+            return { ok: true, abs, text, value: YAML.parse(text) }
         } catch (err) {
             return {
                 ok: false,
@@ -116,14 +259,16 @@ function readDataFile(base) {
     return { ok: false, reason: 'missing', abs: base + EXTENSIONS[0] }
 }
 
-// The cached result for a base path; the first failing read of a file reports
-// it, every later page naming the file shares that one finding.
+// The cached result for a base path; the first read of a file reports what is
+// wrong with it, every later page naming the file shares those findings.
 function loadDataFile(context, base, findings) {
     if (context.cache.has(base)) return context.cache.get(base)
     const result = readDataFile(base)
     context.cache.set(base, result)
     const file = rel(context.cwd, result.abs)
-    if (result.reason === 'invalid-yaml') {
+    if (result.ok) {
+        collectLanguageFindings(context, base, result, findings)
+    } else if (result.reason === 'invalid-yaml') {
         findings.push({
             file,
             line: result.line,

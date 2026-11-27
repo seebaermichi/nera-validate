@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-11-27
+
+### Added
+
+-   Source rules for the data files a page names with `page_data:`
+    (`@nera-static/plugin-page-data`, which only warns at build time):
+    `page-data-type` (error) when the value is neither a name nor a list of
+    names, `page-data-missing` (error) when a name matches no
+    `<data folder>/<name>.yaml` nor `.yml`, or points outside the data folder,
+    both at the page's `page_data` line, and `page-data-invalid` (error) when a
+    named data file is not valid YAML or cannot be read, at the data file and
+    the parser's line, once per file. The data folder is `folders.data` in
+    `config/app.yaml` (default `data`), the key `frontmatter_key` in
+    `config/page-data.yaml` (default `page_data`), as the plugin reads them; a
+    site whose pages never set the key sees no change.
+-   Source rule `page-data-language` (warning): on a site with two or more
+    languages, a language map in a named data file (a map whose keys are all
+    site languages) lacks one of them or holds `null` for it, so the plugin
+    falls back to `app.lang`. Reported once per data file, field path
+    (`themes[].audience`) and language, at the line of the first such map.
+
 ## [1.8.0] - 2026-11-22
 
 ### Added

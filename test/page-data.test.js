@@ -203,3 +203,119 @@ describe('page_data references', () => {
         expect(validateSite({ cwd })).toEqual([])
     })
 })
+
+describe('page-data-language', () => {
+    // A trilingual site: app.lang en, translations for de and es.
+    const trilingual = () => write('config/app.yaml', [
+        'name: Test',
+        'lang: en',
+        'translations:',
+        '  en: { home: Home }',
+        '  de: { home: Start }',
+        '  es: { home: Inicio }',
+    ].join('\n') + '\n')
+
+    const languageFindings = () =>
+        pageDataFindings().filter((r) => r.rule === 'page-data-language')
+
+    it('warns once for a language missing from every entry of a list, at the first map', async () => {
+        await trilingual()
+        await write('data/themes.yaml', [
+            '- name: One',
+            '  audience:',
+            '    en: Developers',
+            '    de: Entwickler',
+            '- name: Two',
+            '  audience: { en: Writers, de: Autoren }',
+            '- name: Three',
+            '  audience: { en: Teams, de: Teams }',
+        ].join('\n') + '\n')
+        await page('one', 'page_data: themes')
+        await page('two', 'page_data: themes')
+        expect(languageFindings()).toEqual([{
+            file: 'data/themes.yaml',
+            line: 3,
+            severity: 'warning',
+            rule: 'page-data-language',
+            message: '`themes[].audience` has no "es" value — pages in "es" ' +
+                'show the "en" value instead; add `es: …` to this map',
+        }])
+        expect(hasErrors(validateSite({ cwd }))).toBe(false)
+    })
+
+    it('counts a null value as missing, and names the outcome without a fallback value', async () => {
+        await trilingual()
+        await write('data/themes.yaml', 'title:\n  en:\n  de: Titel\n  es: Título\n')
+        await page('one', 'page_data: themes')
+        const results = languageFindings()
+        expect(results).toHaveLength(1)
+        expect(results[0]).toMatchObject({ line: 2 })
+        expect(results[0].message).toBe('`themes.title` has no "en" value — ' +
+            'pages in "en" show nothing there, and so does every language ' +
+            'that falls back to it; add `en: …` to this map')
+    })
+
+    it('says when a missing language has no fallback value either', async () => {
+        await trilingual()
+        await write('data/themes.yaml', 'title: { de: Titel }\n')
+        await page('one', 'page_data: themes')
+        const messages = languageFindings().map((r) => r.message)
+        expect(messages).toHaveLength(2)
+        expect(messages[1]).toMatch(/pages in "es" show nothing there \(no "en" value to fall back to\)/)
+    })
+
+    it('finds language maps nested in a translation and in subfolder files', async () => {
+        await trilingual()
+        await write('data/lists/tools.yaml', [
+            'intro:',
+            '  en: { text: Hi, note: { en: a, de: b, es: c } }',
+            '  de: { text: Hallo, note: { en: a, de: b } }',
+            '  es: { text: Hola, note: { en: a, de: b, es: c } }',
+        ].join('\n') + '\n')
+        await page('one', 'page_data: lists/tools')
+        const results = languageFindings()
+        expect(results).toHaveLength(1)
+        expect(results[0]).toMatchObject({ file: 'data/lists/tools.yaml', line: 3 })
+        expect(results[0].message).toMatch(/^`lists\/tools\.intro\.note` has no "es" value/)
+    })
+
+    it('is silent for a map with a key that is no language', async () => {
+        await trilingual()
+        await write('data/themes.yaml', 'title: { en: Title, de: Titel, slug: t }\n')
+        await page('one', 'page_data: themes')
+        expect(languageFindings()).toEqual([])
+    })
+
+    it('is silent on a single-language site', async () => {
+        await write('data/themes.yaml', 'title: { en: Title }\n')
+        await page('one', 'page_data: themes')
+        expect(languageFindings()).toEqual([])
+    })
+
+    it('reports a data file once however many pages name it, also by another spelling', async () => {
+        await trilingual()
+        await write('data/themes.yaml', 'title: { en: Title, de: Titel }\n')
+        await page('one', 'page_data: themes')
+        await page('two', 'page_data: ./themes')
+        expect(languageFindings()).toHaveLength(1)
+    })
+
+    it('falls back to line null when the map is reached through an alias', async () => {
+        await trilingual()
+        await write('data/themes.yaml', 'base: &t { en: Title, de: Titel }\ncopy: *t\n')
+        await page('one', 'page_data: themes')
+        const results = languageFindings()
+        expect(results.map((r) => [r.line, r.message.split(' ')[0]])).toEqual([
+            [1, '`themes.base`'],
+            [null, '`themes.copy`'],
+        ])
+    })
+
+    it('honours ignore:', async () => {
+        await trilingual()
+        await write('data/themes.yaml', 'title: { en: Title, de: Titel }\n')
+        await page('one', 'page_data: themes')
+        await write('config/validate.yaml', 'ignore:\n  page-data-language: [data/themes.yaml]\n')
+        expect(validateSite({ cwd })).toEqual([])
+    })
+})
